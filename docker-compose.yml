@@ -1,0 +1,85 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.13.6
+    container_name: codex-memory-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  codex-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_MAJOR: "22"
+        CODEX_NPM_VERSION: "latest"
+        HOST_UID: "${HOST_UID:-1000}"
+        HOST_GID: "${HOST_GID:-1000}"
+    container_name: codex-worker
+    ports:
+      - "2222:22"
+      - "8090:8090"
+    env_file:
+      - .env
+    depends_on:
+      - qdrant
+    volumes:
+      - ./workspace:/home/codex/workspace
+      - ./ssh:/home/codex/.ssh
+      - ./codex:/home/codex/.codex
+    environment:
+      CHAT_BRIDGE_ENABLE: "true"
+      CHAT_BRIDGE_PORT: "8090"
+      CHAT_BRIDGE_PATH: "/synology/chat/outgoing"
+      TZ: "${TZ:-Asia/Taipei}"
+      CODEX_WORKDIR: "/home/codex/workspace"
+      CODEX_TIMEOUT_MS: "${CODEX_TIMEOUT_MS:-600000}"
+      CODEX_STALE_TIMEOUT_MS: "${CODEX_STALE_TIMEOUT_MS:-60000}"
+      CODEX_HEARTBEAT_INTERVAL_MS: "${CODEX_HEARTBEAT_INTERVAL_MS:-30000}"
+      CODEX_SANDBOX_MODE: "${CODEX_SANDBOX_MODE:-workspace-write}"
+      CODEX_BYPASS_SANDBOX: "${CODEX_BYPASS_SANDBOX:-false}"
+      MAX_REPLY_CHARS: "1800"
+      CODEX_MODEL: "${CODEX_MODEL:-}"
+      CODEX_SYSTEM_PROMPT: "${CODEX_SYSTEM_PROMPT:-你是 codex 助手，請以繁體中文回覆，回答簡潔且可執行。}"
+      MEMORY_ENABLE: "${MEMORY_ENABLE:-true}"
+      MEMORY_BACKEND: "${MEMORY_BACKEND:-qdrant}"
+      MEMORY_PROJECT: "${MEMORY_PROJECT:-codex_worker}"
+      MEMORY_TOP_K: "${MEMORY_TOP_K:-5}"
+      MEMORY_SCORE_THRESHOLD: "${MEMORY_SCORE_THRESHOLD:-0.35}"
+      MEMORY_SHORT_TTL_DAYS: "${MEMORY_SHORT_TTL_DAYS:-14}"
+      QDRANT_URL: "${QDRANT_URL:-http://qdrant:6333}"
+      QDRANT_COLLECTION: "${QDRANT_COLLECTION:-codex_memory}"
+      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-text-embedding-3-small}"
+      EMBEDDING_DIM: "${EMBEDDING_DIM:-1536}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      MEMORY_FALLBACK_FILE: "${MEMORY_FALLBACK_FILE:-/home/codex/.codex/memory/fallback.jsonl}"
+      SCHEDULER_ENABLE: "${SCHEDULER_ENABLE:-true}"
+      SCHEDULER_DB_PATH: "${SCHEDULER_DB_PATH:-/home/codex/.codex/scheduler/jobs.sqlite}"
+      SCHEDULER_TICK_SECONDS: "${SCHEDULER_TICK_SECONDS:-30}"
+      SCHEDULER_CLAIM_LIMIT: "${SCHEDULER_CLAIM_LIMIT:-3}"
+      SCHEDULER_MAX_RETRIES: "${SCHEDULER_MAX_RETRIES:-3}"
+      SCHEDULER_RETRY_BASE_SECONDS: "${SCHEDULER_RETRY_BASE_SECONDS:-60}"
+      SCHEDULER_DEFAULT_TIMEZONE: "${SCHEDULER_DEFAULT_TIMEZONE:-Asia/Taipei}"
+      SCHEDULER_ALLOWED_USERS: "${SCHEDULER_ALLOWED_USERS:-}"
+      SCHEDULER_ALLOWED_CHANNELS: "${SCHEDULER_ALLOWED_CHANNELS:-}"
+      SCHEDULER_ADMIN_USERS: "${SCHEDULER_ADMIN_USERS:-}"
+      SCHEDULER_MAX_ACTIVE_PER_USER: "${SCHEDULER_MAX_ACTIVE_PER_USER:-10}"
+      SCHEDULER_MAX_ACTIVE_PER_CHANNEL: "${SCHEDULER_MAX_ACTIVE_PER_CHANNEL:-50}"
+      SCHEDULER_RETENTION_DAYS: "${SCHEDULER_RETENTION_DAYS:-30}"
+      SCHEDULER_CLEANUP_SECONDS: "${SCHEDULER_CLEANUP_SECONDS:-3600}"
+      ADMIN_UI_ENABLE: "${ADMIN_UI_ENABLE:-true}"
+      ADMIN_UI_PATH: "${ADMIN_UI_PATH:-/admin}"
+      ADMIN_AUTH_TOKEN: "${ADMIN_AUTH_TOKEN:-}"
+      ADMIN_UI_MEMORY_LIMIT: "${ADMIN_UI_MEMORY_LIMIT:-50}"
+      ADMIN_UI_SCHEDULE_LIMIT: "${ADMIN_UI_SCHEDULE_LIMIT:-100}"
+      VISION_MODEL: "${VISION_MODEL:-qwen2-vl}"
+      OLLAMA_API_URL: "${OLLAMA_API_URL:-http://host.docker.internal:11434}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  qdrant_storage:
