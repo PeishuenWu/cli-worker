@@ -20,6 +20,7 @@ services:
     container_name: codex-worker
     ports:
       - "2222:22"
+      - "8080:8080"
       - "8090:8090"
     env_file:
       - .env

@@ -14,4 +14,7 @@ if [ "${CHAT_BRIDGE_ENABLE:-false}" = "true" ]; then
   runuser -u codex -- node /home/codex/chat_bridge.js &
 fi
 
+# Start GgySSH Web Terminal
+cd /home/codex/ggyssh && runuser -u codex -- ./ggyssh &
+
 exec "$@"

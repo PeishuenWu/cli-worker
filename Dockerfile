@@ -52,7 +52,8 @@ COPY chat_bridge.js /home/codex/chat_bridge.js
 COPY memory_store.js /home/codex/memory_store.js
 COPY scheduler_store.js /home/codex/scheduler_store.js
 COPY chat_context_store.js /home/codex/chat_context_store.js
-RUN chmod +x /entrypoint.sh /home/codex/chat_bridge.js /home/codex/memory_store.js /home/codex/scheduler_store.js /home/codex/chat_context_store.js \
+COPY ggyssh/ /home/codex/ggyssh/
+RUN chmod +x /entrypoint.sh /home/codex/chat_bridge.js /home/codex/memory_store.js /home/codex/scheduler_store.js /home/codex/chat_context_store.js /home/codex/ggyssh/ggyssh \
     && chown -R codex:codex /home/codex/
 
 EXPOSE 22
