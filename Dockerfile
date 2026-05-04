@@ -16,6 +16,7 @@ RUN apt-get update \
        git \
        sqlite3 \
        bubblewrap \
+       screen \
     && ln -sf /usr/bin/bwrap /usr/local/bin/bubblewrap \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
@@ -47,6 +48,7 @@ RUN sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config \
     && printf '\nAllowUsers codex\nAuthorizedKeysFile .ssh/authorized_keys\n' >> /etc/ssh/sshd_config
 
 COPY entrypoint.sh /entrypoint.sh
+COPY bash_profile /home/codex/.bash_profile
 COPY src/ /home/codex/src/
 COPY chat_bridge.js /home/codex/chat_bridge.js
 COPY memory_store.js /home/codex/memory_store.js
