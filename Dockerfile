@@ -6,6 +6,8 @@ ARG HOST_UID=1000
 ARG HOST_GID=1000
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -17,6 +19,8 @@ RUN apt-get update \
        sqlite3 \
        bubblewrap \
        screen \
+       locales \
+    && sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen \
     && ln -sf /usr/bin/bwrap /usr/local/bin/bubblewrap \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
