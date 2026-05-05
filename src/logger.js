@@ -17,11 +17,34 @@ const metrics = {
   task_queue_failed_total: 0,
 };
 
-function log(...args) {
-  console.log(new Date().toISOString(), ...args);
+const LOG_FORMAT = process.env.LOG_FORMAT || 'text'; // 'text' or 'json'
+
+function log(msg, context = {}) {
+  const timestamp = new Date().toISOString();
+  
+  if (LOG_FORMAT === 'json') {
+    const logObj = {
+      timestamp,
+      level: context.level || 'info',
+      message: typeof msg === 'string' ? msg : JSON.stringify(msg),
+      ...context
+    };
+    // Remove duplicate keys if any
+    delete logObj.level;
+    console.log(JSON.stringify({ level: context.level || 'info', ...logObj }));
+  } else {
+    const rid = context.requestId ? ` [${context.requestId}]` : '';
+    const level = context.level ? ` ${context.level.toUpperCase()}:` : '';
+    console.log(`${timestamp}${level}${rid} ${msg}`);
+  }
+}
+
+function getLogContext(requestId, level = 'info') {
+  return { requestId, level };
 }
 
 module.exports = {
   metrics,
   log,
+  getLogContext,
 };

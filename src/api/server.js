@@ -5,11 +5,15 @@ const {
   PORT, ADMIN_UI_PATH, ADMIN_UI_ENABLE, ADMIN_AUTH_TOKEN, 
   TASK_CONCURRENCY, TASK_QUEUE_MAX, PATHNAME 
 } = require('../config');
-const { log } = require('../logger');
+const { log, getLogContext } = require('../logger');
 const { 
   isAdminAuthorized, setAdminAuthCookieIfNeeded, serveStaticFile, 
   renderAdminPage, renderDashboardPartial, renderSchedulesPartial, renderMemoriesPartial 
 } = require('./admin');
+
+function generateRequestId() {
+  return Math.random().toString(36).substring(2, 9) + Date.now().toString(36).substring(4);
+}
 
 function sendJson(res, statusCode, payload) {
   const body = JSON.stringify(payload);
@@ -67,7 +71,7 @@ function parseIncoming(req, rawBody) {
   return { data: form, raw: rawBody };
 }
 
-function isAuthorized(data) {
+function isAuthorized(data, requestId) {
   const { VERIFY_TOKEN } = require('../config');
   if (!VERIFY_TOKEN) return true;
   const allowedTokens = VERIFY_TOKEN.split(',').map(t => t.trim()).filter(Boolean);
@@ -79,7 +83,7 @@ function isAuthorized(data) {
   ].filter(Boolean);
   const authorized = candidates.some((v) => allowedTokens.includes(String(v)));
   if (!authorized) {
-    log(`Unauthorized request: outgoing token mismatch, provided_token_count=${candidates.length}`);
+    log(`Unauthorized request: outgoing token mismatch, provided_token_count=${candidates.length}`, getLogContext(requestId, 'warn'));
   }
   return authorized;
 }
@@ -88,12 +92,14 @@ function logIncomingSummary(req, parsedData) {
   const keys = Object.keys(parsedData || {});
   const tokenPresent = Boolean(parsedData?.token || parsedData?.client_token || parsedData?.server_token || parsedData?.outgoing_token);
   const textLen = String(parsedData?.text || '').length;
-  log(`Incoming payload summary: keys=[${keys.join(',')}], token_present=${tokenPresent}, text_len=${textLen}`);
+  log(`Incoming payload summary: keys=[${keys.join(',')}], token_present=${tokenPresent}, text_len=${textLen}`, getLogContext(req.requestId));
 }
 
 function startServer(handleChatRequest) {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
+    const requestId = generateRequestId();
+    req.requestId = requestId;
 
     // Public route for files
     if (url.pathname.startsWith('/files/')) {
@@ -144,7 +150,7 @@ function startServer(handleChatRequest) {
     log(`chat bridge listening on 0.0.0.0:${PORT}${PATHNAME}`);
     log(`task queue configured: concurrency=${TASK_CONCURRENCY}, max=${TASK_QUEUE_MAX}`);
     if (String(ADMIN_UI_ENABLE) === 'true' && !ADMIN_AUTH_TOKEN) {
-      log('security warning: ADMIN_UI_ENABLE=true but ADMIN_AUTH_TOKEN is empty');
+      log('security warning: ADMIN_UI_ENABLE=true but ADMIN_AUTH_TOKEN is empty', { level: 'warn' });
     }
   });
 

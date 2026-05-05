@@ -11,6 +11,10 @@ const {
   MAX_REPLY_CHARS, SYSTEM_PROMPT, SYSTEM_TIMEZONE, VISION_MODEL, OLLAMA_API_URL, UPLOADS_DIR
 } = require('../config');
 const { log } = require('../logger');
+const { CircuitBreaker } = require('../utils/circuit_breaker');
+
+const codexBreaker = new CircuitBreaker('codex', { failureThreshold: 3, resetTimeout: 60000 });
+const visionBreaker = new CircuitBreaker('vision', { failureThreshold: 3, resetTimeout: 60000 });
 
 function buildPrompt(text, data, memoryContext, recentHistory = '') {
   const user = data.username || data.user_name || data.user || 'unknown';
@@ -94,10 +98,11 @@ function buildPrompt(text, data, memoryContext, recentHistory = '') {
 }
 
 function runCodex(prompt, extraEnv = {}, options = {}) {
-  const cleanPrompt = String(prompt || '').replace(/\0/g, '');
-  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+  return codexBreaker.run(() => {
+    const cleanPrompt = String(prompt || '').replace(/\0/g, '');
+    const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
 
-  return new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
     const args = [
       'exec',
       '--skip-git-repo-check',
@@ -211,66 +216,69 @@ function runCodex(prompt, extraEnv = {}, options = {}) {
       resolve((stdout || '').trim());
     });
   });
+});
 }
 
 async function describeImageWithOllama(fileName) {
-  log(`describeImageWithOllama: Using ${VISION_MODEL} to describe ${fileName}`);
-  try {
-    const filePath = path.join(UPLOADS_DIR, fileName);
-    const buffer = await fs.promises.readFile(filePath);
-    const base64Image = buffer.toString('base64');
+  return visionBreaker.run(async () => {
+    log(`describeImageWithOllama: Using ${VISION_MODEL} to describe ${fileName}`);
+    try {
+      const filePath = path.join(UPLOADS_DIR, fileName);
+      const buffer = await fs.promises.readFile(filePath);
+      const base64Image = buffer.toString('base64');
 
-    const postData = JSON.stringify({
-      model: VISION_MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: '請簡潔描述這張圖片的內容、文字或圖表重點，若包含人物請一併詳細描述人物行為和情緒，以便後續處理。請以繁體中文回答。',
-          images: [base64Image]
-        }
-      ],
-      stream: false
-    });
-
-    return new Promise((resolve, reject) => {
-      const url = new URL(`${OLLAMA_API_URL}/api/chat`);
-      const client = url.protocol === 'https:' ? https : http;
-      
-      const options = {
-        hostname: url.hostname,
-        port: url.port || (url.protocol === 'https:' ? 443 : 80),
-        path: url.pathname + url.search,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(postData)
-        }
-      };
-
-      const req = client.request(options, (res) => {
-        let body = '';
-        res.setEncoding('utf8');
-        res.on('data', chunk => body += chunk);
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(body);
-            const description = json.message?.content || '';
-            log(`describeImageWithOllama: Description received (${description.length} chars)`);
-            resolve(description.trim());
-          } catch (e) {
-            reject(new Error(`Ollama Response Parse Error: ${e.message}`));
+      const postData = JSON.stringify({
+        model: VISION_MODEL,
+        messages: [
+          {
+            role: 'user',
+            content: '請簡潔描述這張圖片的內容、文字或圖表重點，若包含人物請一併詳細描述人物行為和情緒，以便後續處理。請以繁體中文回答。',
+            images: [base64Image]
           }
-        });
+        ],
+        stream: false
       });
 
-      req.on('error', reject);
-      req.write(postData);
-      req.end();
-    });
-  } catch (err) {
-    log(`describeImageWithOllama Error: ${err.message}`);
-    return `[無法產生圖片描述: ${err.message}]`;
-  }
+      return new Promise((resolve, reject) => {
+        const url = new URL(`${OLLAMA_API_URL}/api/chat`);
+        const client = url.protocol === 'https:' ? https : http;
+        
+        const options = {
+          hostname: url.hostname,
+          port: url.port || (url.protocol === 'https:' ? 443 : 80),
+          path: url.pathname + url.search,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postData)
+          }
+        };
+
+        const req = client.request(options, (res) => {
+          let body = '';
+          res.setEncoding('utf8');
+          res.on('data', chunk => body += chunk);
+          res.on('end', () => {
+            try {
+              const json = JSON.parse(body);
+              const description = json.message?.content || '';
+              log(`describeImageWithOllama: Description received (${description.length} chars)`);
+              resolve(description.trim());
+            } catch (e) {
+              reject(new Error(`Ollama Response Parse Error: ${e.message}`));
+            }
+          });
+        });
+
+        req.on('error', reject);
+        req.write(postData);
+        req.end();
+      });
+    } catch (err) {
+      log(`describeImageWithOllama Error: ${err.message}`);
+      throw err; // Rethrow to let CircuitBreaker count the failure
+    }
+  }, () => `[無法產生圖片描述: 視覺模型服務目前不可用 (Circuit Breaker OPEN)]`);
 }
 
 module.exports = {

@@ -10,8 +10,10 @@ const {
 } = require('../stores');
 const { buildPrompt, runCodex, describeImageWithOllama } = require('./codex');
 const { fetchUrlContent, fetchFilesByPostId, getApiToken } = require('./webhook');
+const { sanitizeText, isValidFetchUrl } = require('../utils');
 
 async function runPromptWithMemory(messageText, data, sourceTag = 'synology_chat', memoryOptions = {}) {
+  const cleanMessageText = sanitizeText(messageText);
   log(`runPromptWithMemory: source=${sourceTag}, post_id=${data.post_id}, file_id=${data.file_id}, hasVerifyToken=${!!VERIFY_TOKEN}`);
   
   let extraContextParts = [];
@@ -33,9 +35,13 @@ async function runPromptWithMemory(messageText, data, sourceTag = 'synology_chat
     }
   }
 
-  const urlMatches = messageText.match(/https?:\/\/[^\s]+/g);
+  const urlMatches = cleanMessageText.match(/https?:\/\/[^\s]+/g);
   if (urlMatches && urlMatches.length > 0) {
     for (const url of urlMatches.slice(0, 3)) {
+      if (!isValidFetchUrl(url)) {
+        log(`skip fetching invalid or unsafe url=${url}`);
+        continue;
+      }
       log(`attempting to fetch url=${url}`);
       const webContent = await fetchUrlContent(url);
       if (webContent) {
@@ -54,7 +60,7 @@ async function runPromptWithMemory(messageText, data, sourceTag = 'synology_chat
 
   let memoryContext = '';
   try {
-    const memories = await memoryStore.retrieve(messageText, {
+    const memories = await memoryStore.retrieve(cleanMessageText, {
       project: MEMORY_PROJECT,
       limit: MEMORY_TOP_K,
       channel: String(data.channel_name || data.channel_id || ''),
@@ -66,7 +72,7 @@ async function runPromptWithMemory(messageText, data, sourceTag = 'synology_chat
     log('memory retrieve failed:', err.message);
   }
 
-  const trustedUserMessage = String(memoryOptions.promptOverride || messageText);
+  const trustedUserMessage = String(memoryOptions.promptOverride || cleanMessageText);
   const promptSections = [];
   if (extraContextParts.length > 0) {
     promptSections.push('### 系統附加上下文（可信）\n' + extraContextParts.join('\n\n'));

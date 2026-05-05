@@ -57,6 +57,9 @@ class MemoryStore {
     this.fallbackFile = options.fallbackFile || '/home/codex/.codex/memory/fallback.jsonl';
     this.maxFallbackItems = Number(options.maxFallbackItems || 1000);
 
+    this.embeddingCache = new Map();
+    this.maxCacheSize = 500;
+
     this.initialized = false;
     this.mode = this.enabled ? this.backend : 'disabled';
   }
@@ -92,7 +95,11 @@ class MemoryStore {
 
   async ensureCollection() {
     const getResp = await fetch(`${this.qdrantUrl}/collections/${encodeURIComponent(this.collection)}`);
-    if (getResp.ok) return;
+    if (getResp.ok) {
+      // Try to create indexes if they don't exist (non-destructive)
+      await this.createIndexes();
+      return;
+    }
 
     if (getResp.status !== 404) {
       const body = await getResp.text();
@@ -114,6 +121,25 @@ class MemoryStore {
       const body = await createResp.text();
       throw new Error(`qdrant create collection failed: ${createResp.status} ${body}`);
     }
+    
+    await this.createIndexes();
+  }
+
+  async createIndexes() {
+    const fields = ['summary', 'text', 'project', 'channel', 'username', 'source'];
+    for (const field of fields) {
+      const body = {
+        field_name: field,
+        field_schema: field === 'summary' || field === 'text' ? 'text' : 'keyword'
+      };
+      await fetch(`${this.qdrantUrl}/collections/${encodeURIComponent(this.collection)}/index`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }).catch(err => {
+        log(`Warning: failed to create index for ${field}: ${err.message}`);
+      });
+    }
   }
 
   async ensureFallbackFile() {
@@ -127,6 +153,13 @@ class MemoryStore {
   }
 
   async embed(text) {
+    const cleanText = String(text || '').trim();
+    if (!cleanText) throw new Error('empty_text_for_embedding');
+
+    if (this.embeddingCache.has(cleanText)) {
+      return this.embeddingCache.get(cleanText);
+    }
+
     const resp = await fetch(`${this.embeddingBaseUrl}/embeddings`, {
       method: 'POST',
       headers: {
@@ -135,7 +168,7 @@ class MemoryStore {
       },
       body: JSON.stringify({
         model: this.embeddingModel,
-        input: text,
+        input: cleanText,
       }),
     });
 
@@ -149,6 +182,14 @@ class MemoryStore {
     if (!Array.isArray(v) || v.length === 0) {
       throw new Error('embedding response missing vector');
     }
+
+    // Update cache (FIFO-ish eviction)
+    if (this.embeddingCache.size >= this.maxCacheSize) {
+      const firstKey = this.embeddingCache.keys().next().value;
+      this.embeddingCache.delete(firstKey);
+    }
+    this.embeddingCache.set(cleanText, v);
+
     return v;
   }
 
@@ -169,39 +210,41 @@ class MemoryStore {
       return this.retrieveFallback(query, { project, limit, channel, username, source });
     }
 
+    // Hybrid Search: Vector + Keyword
+    const vectorPromise = this.retrieveVector(query, { project, limit, channel, username, source });
+    const keywordPromise = this.retrieveKeywords(query, { project, limit, channel, username, source });
+
+    const [vectorResults, keywordResults] = await Promise.all([vectorPromise, keywordPromise]);
+    
+    // Merge and deduplicate
+    const merged = new Map();
+    [...vectorResults, ...keywordResults].forEach(m => {
+      if (!merged.has(m.id)) {
+        merged.set(m.id, m);
+      } else {
+        // Boost score if found in both
+        const existing = merged.get(m.id);
+        existing.score = Math.max(existing.score, m.score) + 0.1;
+      }
+    });
+
+    return Array.from(merged.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  }
+
+  async retrieveVector(query, opts) {
     const vector = await this.embed(query);
-    const mustFilters = [
-      {
-        key: 'project',
-        match: { value: project },
-      },
-    ];
-    if (channel) {
-      mustFilters.push({
-        key: 'channel',
-        match: { value: channel },
-      });
-    }
-    if (username) {
-      mustFilters.push({
-        key: 'username',
-        match: { value: username },
-      });
-    }
-    if (source) {
-      mustFilters.push({
-        key: 'source',
-        match: { value: source },
-      });
-    }
+    const mustFilters = [{ key: 'project', match: { value: opts.project } }];
+    if (opts.channel) mustFilters.push({ key: 'channel', match: { value: opts.channel } });
+    if (opts.username) mustFilters.push({ key: 'username', match: { value: opts.username } });
+    if (opts.source) mustFilters.push({ key: 'source', match: { value: opts.source } });
 
     const searchBody = {
       vector,
-      limit,
+      limit: opts.limit,
       with_payload: true,
-      filter: {
-        must: mustFilters,
-      },
+      filter: { must: mustFilters },
     };
 
     const resp = await fetch(`${this.qdrantUrl}/collections/${encodeURIComponent(this.collection)}/points/search`, {
@@ -212,20 +255,58 @@ class MemoryStore {
 
     if (!resp.ok) {
       const body = await resp.text();
-      throw new Error(`qdrant search failed: ${resp.status} ${body}`);
+      throw new Error(`qdrant vector search failed: ${resp.status} ${body}`);
     }
 
     const json = await resp.json();
-    const result = Array.isArray(json?.result) ? json.result : [];
+    return this.mapQdrantResults(json?.result || []);
+  }
 
+  async retrieveKeywords(query, opts) {
+    const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+    if (terms.length === 0) return [];
+
+    const mustFilters = [{ key: 'project', match: { value: opts.project } }];
+    if (opts.channel) mustFilters.push({ key: 'channel', match: { value: opts.channel } });
+    if (opts.username) mustFilters.push({ key: 'username', match: { value: opts.username } });
+    if (opts.source) mustFilters.push({ key: 'source', match: { value: opts.source } });
+
+    const shouldFilters = [];
+    terms.forEach(t => {
+      shouldFilters.push({ key: 'summary', match: { text: t } });
+      shouldFilters.push({ key: 'text', match: { text: t } });
+    });
+
+    const body = {
+      limit: opts.limit,
+      with_payload: true,
+      filter: {
+        must: mustFilters,
+        should: shouldFilters
+      }
+    };
+
+    const resp = await fetch(`${this.qdrantUrl}/collections/${encodeURIComponent(this.collection)}/points/scroll`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) return [];
+    const json = await resp.json();
+    return this.mapQdrantResults(json?.result?.points || []).map(r => ({ ...r, score: 0.5 })); // Constant score for keyword matches
+  }
+
+  mapQdrantResults(results) {
     const now = Date.now();
-    return result
-      .filter((r) => typeof r?.score === 'number' && r.score >= this.scoreThreshold)
+    return results
+      .filter((r) => !r.payload?.expires_at || new Date(r.payload.expires_at).getTime() > now)
+      .filter((r) => r.score === undefined || r.score >= this.scoreThreshold)
       .map((r) => {
         const p = r.payload || {};
         return {
           id: String(r.id || p.id || ''),
-          score: r.score,
+          score: r.score || 0.5,
           summary: String(p.summary || ''),
           text: String(p.text || ''),
           decisions: Array.isArray(p.decisions) ? p.decisions : [],
@@ -235,8 +316,7 @@ class MemoryStore {
           created_at: p.created_at || '',
           expires_at: p.expires_at || '',
         };
-      })
-      .filter((m) => !m.expires_at || new Date(m.expires_at).getTime() > now);
+      });
   }
 
   async remember(entry, opts = {}) {

@@ -59,7 +59,7 @@ async function handleChatRequest(req, res) {
   }
 
   const { data } = parsed;
-  if (!isAuthorized(data)) {
+  if (!isAuthorized(data, req.requestId)) {
     sendJson(res, 401, { error: 'unauthorized' });
     return true;
   }

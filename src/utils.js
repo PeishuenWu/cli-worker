@@ -82,6 +82,39 @@ function sanitizeFileName(input) {
   return (cleaned || 'file.bin').slice(0, 120);
 }
 
+function sanitizeText(input) {
+  return String(input || '').replace(/\0/g, '').trim();
+}
+
+function isPrivateIp(ip) {
+  if (!ip) return false;
+  // Simple check for common private ranges
+  return (
+    ip.startsWith('10.') ||
+    ip.startsWith('172.16.') || ip.startsWith('172.17.') || ip.startsWith('172.18.') || ip.startsWith('172.19.') ||
+    ip.startsWith('172.20.') || ip.startsWith('172.21.') || ip.startsWith('172.22.') || ip.startsWith('172.23.') ||
+    ip.startsWith('172.24.') || ip.startsWith('172.25.') || ip.startsWith('172.26.') || ip.startsWith('172.27.') ||
+    ip.startsWith('172.28.') || ip.startsWith('172.29.') || ip.startsWith('172.30.') || ip.startsWith('172.31.') ||
+    ip.startsWith('192.168.') ||
+    ip === '127.0.0.1' ||
+    ip === 'localhost' ||
+    ip === '::1'
+  );
+}
+
+function isValidFetchUrl(urlString) {
+  try {
+    const url = new URL(urlString);
+    if (!['http:', 'https:'].includes(url.protocol)) return false;
+    const hostname = url.hostname.toLowerCase();
+    if (isPrivateIp(hostname)) return false;
+    // Further hostname checks could go here
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
 function parseAtDateTime(input) {
   const s = String(input || '').trim();
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/);
@@ -217,6 +250,8 @@ module.exports = {
   truncateReply,
   getMessageText,
   sanitizeFileName,
+  sanitizeText,
+  isValidFetchUrl,
   parseAtDateTime,
   parseCronExpression,
   cronMatches,
