@@ -53,6 +53,7 @@ RUN sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config \
 
 COPY entrypoint.sh /entrypoint.sh
 COPY bash_profile /home/codex/.bash_profile
+COPY .screenrc /home/codex/.screenrc
 COPY src/ /home/codex/src/
 COPY chat_bridge.js /home/codex/chat_bridge.js
 COPY memory_store.js /home/codex/memory_store.js

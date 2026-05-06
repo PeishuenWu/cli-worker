@@ -1,0 +1,23 @@
+# Enable UTF-8
+utf8 on
+defutf8 on
+
+# Increase scrollback buffer (for Ctrl-A [ mode)
+defscrollback 10000
+
+# Fix for terminal emulator scrolling (native scrollbar)
+# This allows the mouse wheel to work in most terminal emulators
+# by disabling the alternate screen buffer.
+termcapinfo xterm* ti@:te@
+termcapinfo gnome-terminal ti@:te@
+termcapinfo rxvt* ti@:te@
+termcapinfo screen* ti@:te@
+termcapinfo putty* ti@:te@
+termcapinfo konsole* ti@:te@
+
+# Nice status bar
+hardstatus alwayslastline
+hardstatus string '%{= kG}%-Lw%{= bW}%n%f %t%{-}%+Lw %=%{= kG}%H %D %Y-%m-%d %c:%s'
+
+# Disable startup message
+startup_message off

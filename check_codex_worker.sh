@@ -52,6 +52,7 @@ check_file() {
 check_file "/home/codex/chat_bridge.js"
 check_file "/home/codex/memory_store.js"
 check_file "/home/codex/scheduler_store.js"
+check_file "/home/codex/.screenrc"
 
 PORT_LINE="$(docker compose port "$SERVICE" 8090 2>/dev/null || true)"
 if [ -n "$PORT_LINE" ]; then
