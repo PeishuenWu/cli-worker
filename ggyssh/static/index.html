@@ -95,6 +95,7 @@
         .md-viewer th, .md-viewer td { border: 1px solid #2f3541; padding: 0.35rem 0.5rem; text-align: left; }
         .md-viewer .mermaid { background: #0b0d11; border: 1px solid #2f3541; border-radius: 6px; padding: 0.5rem; overflow-x: auto; }
         .md-viewer .mermaid-error { border: 1px solid #6b2c31; background: #2c1317; color: #ffb4b4; border-radius: 6px; padding: 0.5rem; font-size: 0.8rem; white-space: pre-wrap; }
+        .html-viewer { flex: 1; min-height: 0; border: 1px solid #2f3541; border-radius: 6px; background: #fff; }
         .text-editor-wrap { height: 100%; display: flex; flex-direction: column; gap: 0.5rem; }
         .text-editor-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
         .text-editor-name { color: #8ab4f8; font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -530,7 +531,7 @@
         }
 
         function isPreviewSupportedExt(ext) {
-            return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'mp4', 'webm', 'ogg', 'mp3', 'wav', 'pdf', 'docx', 'xlsx'].includes(ext);
+            return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'mp4', 'webm', 'ogg', 'mp3', 'wav', 'pdf', 'docx', 'xlsx', 'html', 'htm'].includes(ext);
         }
 
         function isEditableTextExt(ext) {
@@ -663,6 +664,8 @@
                 renderXlsxPreview(container, data);
             } else if (ext === 'md') {
                 renderMarkdownEditor(container, data);
+            } else if (ext === 'html' || ext === 'htm') {
+                renderHtmlEditor(container, data);
             } else if (isEditableTextExt(ext)) {
                 renderTextEditor(container, data);
             } else {
@@ -862,6 +865,199 @@
             marked.setOptions({ gfm: true, breaks: true });
             const rawHtml = marked.parse(text || '');
             return DOMPurify.sanitize(rawHtml);
+        }
+
+        async function renderHtmlEditor(container, data) {
+            const editorId = `html-editor-${++previewEditorCounter}`;
+            const statusId = `html-status-${previewEditorCounter}`;
+            const saveBtnId = `html-save-${previewEditorCounter}`;
+            const fileNameId = `html-name-${previewEditorCounter}`;
+            const lineNoId = `html-lineno-${previewEditorCounter}`;
+            const viewerId = `html-viewer-${previewEditorCounter}`;
+            const readBtnId = `html-read-${previewEditorCounter}`;
+            const editBtnId = `html-edit-${previewEditorCounter}`;
+            const editorBodyId = `html-editor-body-${previewEditorCounter}`;
+            const pathInfo = splitRemotePath(data.path);
+            const baseDir = pathInfo.dir;
+            const initialName = pathInfo.name || data.name || 'untitled.html';
+
+            container.classList.add('editor-mode');
+            container.innerHTML = `
+                <div class="text-editor-wrap">
+                    <div class="text-editor-toolbar">
+                        <div class="d-flex align-items-center gap-2 flex-grow-1 overflow-hidden">
+                            <input id="${fileNameId}" class="form-control form-control-sm text-editor-filename" value="${escapeHtml(initialName)}" />
+                            <div class="text-editor-dir" title="${escapeHtml(baseDir)}">${escapeHtml(baseDir)}</div>
+                        </div>
+                        <div class="btn-group btn-group-sm me-1" role="group">
+                            <button id="${readBtnId}" class="btn btn-outline-secondary">Read</button>
+                            <button id="${editBtnId}" class="btn btn-outline-secondary">Edit</button>
+                        </div>
+                        <button id="${saveBtnId}" class="btn btn-sm btn-primary">Save</button>
+                    </div>
+                    <div id="${statusId}" class="text-editor-status">Loading...</div>
+                    <iframe id="${viewerId}" class="html-viewer" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
+                    <div id="${editorBodyId}" class="text-editor-body hidden">
+                        <div class="text-editor-lines-wrap"><pre id="${lineNoId}" class="text-editor-lines">1</pre></div>
+                        <textarea id="${editorId}" class="text-editor-area" spellcheck="false"></textarea>
+                    </div>
+                </div>
+            `;
+
+            const textarea = document.getElementById(editorId);
+            const viewer = document.getElementById(viewerId);
+            const editorBody = document.getElementById(editorBodyId);
+            const statusEl = document.getElementById(statusId);
+            const saveBtn = document.getElementById(saveBtnId);
+            const fileNameInput = document.getElementById(fileNameId);
+            const lineNoEl = document.getElementById(lineNoId);
+            const readBtn = document.getElementById(readBtnId);
+            const editBtn = document.getElementById(editBtnId);
+            let savedContent = '';
+            let savedName = initialName;
+            let currentMode = 'read';
+
+            const updateLineNumbers = () => {
+                const count = Math.max(1, textarea.value.split('\n').length);
+                const lines = [];
+                for (let i = 1; i <= count; i++) lines.push(String(i));
+                lineNoEl.textContent = lines.join('\n');
+                lineNoEl.style.marginTop = `${-textarea.scrollTop}px`;
+            };
+
+            const refreshDirtyState = () => {
+                const currentName = sanitizeFileName(fileNameInput.value) || fileNameInput.value.trim() || initialName;
+                const isDirty = currentName !== savedName || textarea.value !== savedContent;
+                updatePreviewTabTitle(container, currentName, isDirty);
+            };
+
+            const renderReadMode = () => {
+                viewer.srcdoc = textarea.value;
+            };
+
+            const setMode = async (mode) => {
+                currentMode = mode;
+                const read = mode === 'read';
+                viewer.classList.toggle('hidden', !read);
+                editorBody.classList.toggle('hidden', read);
+                readBtn.classList.toggle('btn-primary', read);
+                readBtn.classList.toggle('btn-outline-secondary', !read);
+                editBtn.classList.toggle('btn-primary', !read);
+                editBtn.classList.toggle('btn-outline-secondary', read);
+                if (read) {
+                    renderReadMode();
+                } else {
+                    textarea.focus();
+                }
+            };
+
+            if (data.isNew) {
+                textarea.value = data.content || '';
+                savedContent = textarea.value;
+                statusEl.textContent = 'New file';
+            } else {
+                try {
+                    const resp = await fetch('sftp/action', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            sid: sid,
+                            action: 'read_text',
+                            path: data.path
+                        })
+                    });
+                    if (!resp.ok) throw new Error(await resp.text());
+                    const payload = await resp.json();
+                    textarea.value = payload.content || '';
+                    savedContent = textarea.value;
+                    statusEl.textContent = 'Loaded';
+                } catch (e) {
+                    textarea.disabled = true;
+                    saveBtn.disabled = true;
+                    readBtn.disabled = true;
+                    editBtn.disabled = true;
+                    statusEl.textContent = `Load failed: ${e.message}`;
+                    statusEl.style.color = '#f88';
+                    return;
+                }
+            }
+
+            updateLineNumbers();
+            refreshDirtyState();
+            await setMode('read');
+
+            textarea.addEventListener('input', () => {
+                updateLineNumbers();
+                refreshDirtyState();
+            });
+            textarea.addEventListener('scroll', updateLineNumbers);
+            fileNameInput.addEventListener('input', refreshDirtyState);
+            readBtn.addEventListener('click', () => setMode('read'));
+            editBtn.addEventListener('click', () => setMode('edit'));
+
+            const saveCurrent = async () => {
+                const rawName = sanitizeFileName(fileNameInput.value);
+                if (!rawName) {
+                    statusEl.textContent = 'Invalid file name';
+                    statusEl.style.color = '#f88';
+                    return;
+                }
+                const targetPath = joinRemotePath(baseDir, rawName);
+                const samePath = targetPath === data.path;
+                saveBtn.disabled = true;
+                statusEl.textContent = 'Saving...';
+                statusEl.style.color = '#aaa';
+
+                const doWrite = async (overwrite) => {
+                    return fetch('sftp/action', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            sid: sid,
+                            action: 'write_text',
+                            path: targetPath,
+                            content: textarea.value,
+                            overwrite: overwrite
+                        })
+                    });
+                };
+
+                try {
+                    let resp = await doWrite(samePath || data.isNew);
+                    if (resp.status === 409) {
+                        const ok = confirm(`File "${rawName}" already exists. Overwrite?`);
+                        if (!ok) throw new Error('Canceled');
+                        resp = await doWrite(true);
+                    }
+                    if (!resp.ok) throw new Error(await resp.text());
+                    const oldPath = data.path;
+                    data.path = targetPath;
+                    data.name = rawName;
+                    data.isNew = false;
+                    updatePreviewIndexForTab(container, oldPath, targetPath);
+                    savedName = rawName;
+                    savedContent = textarea.value;
+                    updatePreviewTabTitle(container, rawName, false);
+                    statusEl.textContent = `Saved: ${rawName}`;
+                    statusEl.style.color = '#9ad59f';
+                    if (currentMode === 'read') renderReadMode();
+                    refreshFiles();
+                } catch (e) {
+                    statusEl.textContent = `Save failed: ${e.message}`;
+                    statusEl.style.color = '#f88';
+                } finally {
+                    saveBtn.disabled = false;
+                    refreshDirtyState();
+                }
+            };
+
+            saveBtn.addEventListener('click', saveCurrent);
+            textarea.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+                    e.preventDefault();
+                    saveCurrent();
+                }
+            });
         }
 
         async function renderMarkdownEditor(container, data) {
