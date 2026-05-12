@@ -239,7 +239,7 @@ async function renderSchedulesPartial() {
                   class="outline secondary" 
                   style="padding: 2px 8px; font-size: 11px; margin: 0;"
                   hx-post="${ADMIN_UI_PATH}/schedules/${row.id}/cancel"
-                  hx-target="#schedules"
+                  hx-target="#tab-content"
                   hx-confirm="確定要取消排程 #${row.id} 嗎？">
                   取消
                 </button>
