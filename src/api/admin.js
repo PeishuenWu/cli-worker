@@ -75,71 +75,92 @@ function renderAdminPage() {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Codex Worker 管理介面</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <style>
-    body { font-family: "Noto Sans TC", "PingFang TC", sans-serif; margin: 16px; background: #f6f8fa; color: #222; }
-    .grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
-    @media (min-width: 1100px) { .grid { grid-template-columns: 1fr 1fr; } }
-    .card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
-    h1, h2 { margin: 0 0 8px 0; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { border-bottom: 1px solid #eaeef2; text-align: left; padding: 6px 4px; vertical-align: top; }
-    .muted { color: #57606a; font-size: 12px; }
-    code { background: #f3f4f6; padding: 1px 4px; border-radius: 4px; }
+    :root { --pico-font-size: 14px; }
+    body { padding-top: 2rem; }
+    .muted { color: var(--pico-muted-color); font-size: 0.85rem; }
+    code { font-size: 0.8rem; }
+    table { --pico-font-size: 13px; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .card-header h2 { margin-bottom: 0; font-size: 1.25rem; }
+    .status-badge { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; text-transform: uppercase; font-weight: bold; }
+    .status-done { background: #d4edda; color: #155724; }
+    .status-pending { background: #fff3cd; color: #856404; }
+    .status-failed { background: #f8d7da; color: #721c24; }
   </style>
 </head>
 <body>
-  <h1>Codex Worker 管理介面</h1>
-  <div class="muted">內網模式，無登入。請搭配內網 ACL 使用。</div>
-  <div class="grid">
-    <section class="card" id="dashboard"
-      hx-get="${ADMIN_UI_PATH}/partials/dashboard"
-      hx-trigger="load, every 10s"
+  <main class="container">
+    <header>
+      <hgroup>
+        <h1>Codex Worker 管理介面</h1>
+        <p>內網模式 | Started: ${escapeHtml(metrics.started_at)}</p>
+      </hgroup>
+    </header>
+
+    <div class="grid">
+      <article id="dashboard"
+        hx-get="${ADMIN_UI_PATH}/partials/dashboard"
+        hx-trigger="load, every 10s"
+        hx-swap="innerHTML">
+        <p aria-busy="true">讀取系統總覽...</p>
+      </article>
+
+      <article id="schedules"
+        hx-get="${ADMIN_UI_PATH}/partials/schedules"
+        hx-trigger="load, every 10s"
+        hx-swap="innerHTML">
+        <p aria-busy="true">讀取排程列表...</p>
+      </article>
+    </div>
+
+    <article id="memories"
+      hx-get="${ADMIN_UI_PATH}/partials/memories"
+      hx-trigger="load, every 15s"
       hx-swap="innerHTML">
-      讀取中...
-    </section>
-    <section class="card" id="schedules"
-      hx-get="${ADMIN_UI_PATH}/partials/schedules"
-      hx-trigger="load, every 10s"
-      hx-swap="innerHTML">
-      讀取中...
-    </section>
-  </div>
-  <section class="card" id="memories"
-    hx-get="${ADMIN_UI_PATH}/partials/memories"
-    hx-trigger="load, every 15s"
-    hx-swap="innerHTML"
-    style="margin-top: 12px;">
-    讀取中...
-  </section>
+      <p aria-busy="true">讀取記憶列表...</p>
+    </article>
+  </main>
 </body>
 </html>`;
 }
 
 async function renderDashboardPartial() {
   const statusCounts = await schedulerStore.getStatusCounts().catch(() => ({}));
-  const cards = [
-    ['Scheduler Ticks', metrics.scheduler_ticks_total],
-    ['Jobs Claimed', metrics.scheduler_jobs_claimed_total],
-    ['Jobs Success', metrics.scheduler_jobs_success_total],
-    ['Jobs Retry', metrics.scheduler_jobs_retry_total],
-    ['Jobs Failed', metrics.scheduler_jobs_failed_total],
-    ['Cleanup Deleted', metrics.scheduler_cleanup_deleted_total],
-    ['Cmd Denied', metrics.schedule_commands_denied_total],
+  const stats = [
+    { label: 'Ticks', value: metrics.scheduler_ticks_total },
+    { label: 'Claimed', value: metrics.scheduler_jobs_claimed_total },
+    { label: 'Success', value: metrics.scheduler_jobs_success_total },
+    { label: 'Retry', value: metrics.scheduler_jobs_retry_total },
+    { label: 'Failed', value: metrics.scheduler_jobs_failed_total },
   ];
 
-  const statusText = Object.keys(statusCounts).length === 0
-    ? '-'
-    : Object.entries(statusCounts).map(([k, v]) => `${escapeHtml(k)}:${v}`).join(' / ');
+  const statusTags = Object.entries(statusCounts).map(([k, v]) => 
+    `<mark>${escapeHtml(k)}: ${v}</mark>`
+  ).join(' ');
 
   return `
-<h2>系統總覽</h2>
-<div class="muted">Started: ${escapeHtml(metrics.started_at)} | Scheduler: ${String(SCHEDULER_ENABLE)}</div>
-<table>
-  <thead><tr><th>指標</th><th>數值</th></tr></thead>
+<div class="card-header">
+  <h2>系統總覽</h2>
+  <div>${statusTags}</div>
+</div>
+<div class="grid">
+  ${stats.map(s => `
+    <div style="text-align: center; border: 1px solid var(--pico-muted-border-color); padding: 0.5rem; border-radius: 8px;">
+      <div class="muted">${escapeHtml(s.label)}</div>
+      <div style="font-size: 1.5rem; font-weight: bold;">${escapeHtml(String(s.value))}</div>
+    </div>
+  `).join('')}
+</div>
+<hr>
+<table class="striped">
+  <thead><tr><th>維護指標</th><th>數值</th></tr></thead>
   <tbody>
-    ${cards.map(([k, v]) => `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(String(v))}</td></tr>`).join('')}
-    <tr><td>Job Status</td><td>${statusText}</td></tr>
+    <tr><td>Cleanup Deleted</td><td>${escapeHtml(String(metrics.scheduler_cleanup_deleted_total))}</td></tr>
+    <tr><td>Cmd Denied</td><td>${escapeHtml(String(metrics.schedule_commands_denied_total))}</td></tr>
+    <tr><td>Scheduler Status</td><td>${String(SCHEDULER_ENABLE) === 'true' ? '🟢 Active' : '🔴 Disabled'}</td></tr>
   </tbody>
 </table>`;
 }
@@ -147,27 +168,47 @@ async function renderDashboardPartial() {
 async function renderSchedulesPartial() {
   const rows = await schedulerStore.listJobsAll(ADMIN_UI_SCHEDULE_LIMIT).catch(() => []);
   return `
-<h2>排程列表</h2>
-<div class="muted">顯示最近 ${rows.length} 筆（含 done/canceled）</div>
-<table>
-  <thead>
-    <tr><th>ID</th><th>狀態</th><th>類型</th><th>時間</th><th>擁有者</th><th>頻道</th><th>任務</th><th>重試</th></tr>
-  </thead>
-  <tbody>
-    ${rows.map((row) => `
+<div class="card-header">
+  <h2>排程列表</h2>
+  <span class="muted">最近 ${rows.length} 筆</span>
+</div>
+<div class="overflow-auto">
+  <table class="striped">
+    <thead>
       <tr>
-        <td>${escapeHtml(String(row.id || ''))}</td>
-        <td>${escapeHtml(String(row.status || ''))}</td>
-        <td>${escapeHtml(String(row.type || ''))}${row.cron_expr ? `<br><code>${escapeHtml(String(row.cron_expr))}</code>` : ''}</td>
-        <td>${escapeHtml(fmtTs(row.run_at))}</td>
-        <td>${escapeHtml(String(row.username || '-'))}</td>
-        <td>${escapeHtml(String(row.channel || '-'))}</td>
-        <td title="${escapeHtml(String(row.prompt || ''))}">${escapeHtml(shortText(row.prompt, 80))}</td>
-        <td>${escapeHtml(String(row.retry_count || 0))}/${escapeHtml(String(row.max_retries || 0))}</td>
+        <th>ID</th>
+        <th>狀態</th>
+        <th>類型/Cron</th>
+        <th>執行時間</th>
+        <th>對象/頻道</th>
+        <th>任務內容</th>
+        <th>重試</th>
       </tr>
-    `).join('')}
-  </tbody>
-</table>`;
+    </thead>
+    <tbody>
+      ${rows.map((row) => {
+        const statusClass = row.status === 'done' ? 'status-done' : (row.status === 'pending' ? 'status-pending' : 'status-failed');
+        return `
+          <tr>
+            <td>${escapeHtml(String(row.id || ''))}</td>
+            <td><span class="status-badge ${statusClass}">${escapeHtml(String(row.status || ''))}</span></td>
+            <td>
+              <strong>${escapeHtml(String(row.type || ''))}</strong>
+              ${row.cron_expr ? `<br><code>${escapeHtml(String(row.cron_expr))}</code>` : ''}
+            </td>
+            <td>${escapeHtml(fmtTs(row.run_at))}</td>
+            <td>
+              ${escapeHtml(String(row.username || '-'))}<br>
+              <small class="muted">${escapeHtml(String(row.channel || '-'))}</small>
+            </td>
+            <td title="${escapeHtml(String(row.prompt || ''))}">${escapeHtml(shortText(row.prompt, 60))}</td>
+            <td>${escapeHtml(String(row.retry_count || 0))}/${escapeHtml(String(row.max_retries || 0))}</td>
+          </tr>
+        `;
+      }).join('')}
+    </tbody>
+  </table>
+</div>`;
 }
 
 async function renderMemoriesPartial() {
@@ -177,27 +218,41 @@ async function renderMemoriesPartial() {
   }).catch(() => []);
 
   return `
-<h2>記憶列表</h2>
-<div class="muted">project=${escapeHtml(MEMORY_PROJECT)}，最近 ${rows.length} 筆</div>
-<table>
-  <thead>
-    <tr><th>ID</th><th>Scope</th><th>來源</th><th>使用者</th><th>時間</th><th>標籤</th><th>摘要</th></tr>
-  </thead>
-  <tbody>
-    ${rows.map((row) => `
+<div class="card-header">
+  <h2>記憶列表</h2>
+  <span class="muted">project=${escapeHtml(MEMORY_PROJECT)}</span>
+</div>
+<div class="overflow-auto">
+  <table class="striped">
+    <thead>
       <tr>
-        <td>${escapeHtml(String(row.id || ''))}</td>
-        <td>${escapeHtml(String(row.scope || ''))}</td>
-        <td>${escapeHtml(String(row.source || '-'))}</td>
-        <td>${escapeHtml(String(row.username || '-'))}</td>
-        <td>${escapeHtml(fmtTs(row.created_at))}</td>
-        <td>${escapeHtml((Array.isArray(row.tags) ? row.tags : []).join(', '))}</td>
-        <td title="${escapeHtml(String(row.summary || ''))}">${escapeHtml(shortText(row.summary, 120))}</td>
+        <th>ID</th>
+        <th>Scope/來源</th>
+        <th>使用者</th>
+        <th>時間</th>
+        <th>標籤</th>
+        <th>摘要</th>
       </tr>
-    `).join('')}
-  </tbody>
-</table>`;
+    </thead>
+    <tbody>
+      ${rows.map((row) => `
+        <tr>
+          <td>${escapeHtml(String(row.id || ''))}</td>
+          <td>
+            <ins>${escapeHtml(String(row.scope || ''))}</ins><br>
+            <small class="muted">${escapeHtml(String(row.source || '-'))}</small>
+          </td>
+          <td>${escapeHtml(String(row.username || '-'))}</td>
+          <td>${escapeHtml(fmtTs(row.created_at))}</td>
+          <td>${(Array.isArray(row.tags) ? row.tags : []).map(t => `<kbd>${escapeHtml(t)}</kbd>`).join(' ')}</td>
+          <td title="${escapeHtml(String(row.summary || ''))}">${escapeHtml(shortText(row.summary, 100))}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+</div>`;
 }
+
 
 module.exports = {
   isAdminAuthorized,
