@@ -551,6 +551,62 @@ class MemoryStore {
       .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
       .slice(0, limit);
   }
+
+  async deleteMemory(id) {
+    if (!this.initialized || this.mode === 'disabled') return false;
+
+    if (this.mode === 'fallback') {
+      await this.ensureFallbackFile();
+      const content = await fs.promises.readFile(this.fallbackFile, 'utf8');
+      const lines = content.split('\n').filter(Boolean);
+      const filtered = lines.filter(line => {
+        const item = safeJsonParse(line, {});
+        return String(item.id) !== String(id);
+      });
+      if (lines.length === filtered.length) return false;
+      await fs.promises.writeFile(this.fallbackFile, filtered.join('\n') + (filtered.length > 0 ? '\n' : ''), 'utf8');
+      return true;
+    }
+
+    const resp = await fetch(`${this.qdrantUrl}/collections/${encodeURIComponent(this.collection)}/points/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ points: [id] }),
+    });
+    return resp.ok;
+  }
+
+  async promoteToLongTerm(id) {
+    if (!this.initialized || this.mode === 'disabled') return false;
+
+    if (this.mode === 'fallback') {
+      await this.ensureFallbackFile();
+      const content = await fs.promises.readFile(this.fallbackFile, 'utf8');
+      const lines = content.split('\n').filter(Boolean);
+      let found = false;
+      const updated = lines.map(line => {
+        const item = safeJsonParse(line, {});
+        if (String(item.id) === String(id)) {
+          found = true;
+          return JSON.stringify({ ...item, scope: 'long', expires_at: '' });
+        }
+        return line;
+      });
+      if (!found) return false;
+      await fs.promises.writeFile(this.fallbackFile, updated.join('\n') + '\n', 'utf8');
+      return true;
+    }
+
+    const resp = await fetch(`${this.qdrantUrl}/collections/${encodeURIComponent(this.collection)}/points/payload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        points: [id],
+        payload: { scope: 'long', expires_at: '' }
+      }),
+    });
+    return resp.ok;
+  }
 }
 
 function buildMemoryContext(memories) {

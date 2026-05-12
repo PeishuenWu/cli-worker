@@ -141,6 +141,31 @@ class ChatContextStore {
     if (history.length === 0) return '';
     return `### 最近對話內容 (Short-term Context):\n${history.map((h) => `${h.role === 'user' ? '使用者' : '助理'}: ${h.text}`).join('\n')}\n`;
   }
+
+  async listRecentChannels(limit = 50) {
+    if (!this.enabled) return [];
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 200));
+    const sql = [
+      'SELECT channel_id, history_json, updated_at',
+      'FROM channel_context',
+      'ORDER BY updated_at DESC',
+      `LIMIT ${safeLimit};`,
+    ].join('\n');
+    const out = await this.runSql(sql, { json: true });
+    return out.trim() ? JSON.parse(out) : [];
+  }
+
+  async deleteContext(channelId) {
+    if (!this.enabled || !channelId) return false;
+    const id = this.escape(String(channelId));
+    const sql = [
+      `DELETE FROM channel_context WHERE channel_id='${id}';`,
+      'SELECT changes() AS changed;',
+    ].join('\n');
+    const out = await this.runSql(sql);
+    const m = out.match(/(\d+)/);
+    return m ? Number(m[1]) > 0 : false;
+  }
 }
 
 module.exports = {

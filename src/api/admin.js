@@ -129,6 +129,14 @@ function renderAdminPage() {
         </li>
         <li>
           <button 
+            hx-get="${ADMIN_UI_PATH}/partials/contexts" 
+            hx-target="#tab-content"
+            onclick="switchTab(this)">
+            對話上下文
+          </button>
+        </li>
+        <li>
+          <button 
             hx-get="${ADMIN_UI_PATH}/partials/memories" 
             hx-target="#tab-content"
             onclick="switchTab(this)">
@@ -302,6 +310,7 @@ async function renderMemoriesPartial(urlObj) {
         <th>時間</th>
         <th>標籤</th>
         <th>摘要</th>
+        <th>操作</th>
       </tr>
     </thead>
     <tbody>
@@ -315,7 +324,25 @@ async function renderMemoriesPartial(urlObj) {
           <td>${escapeHtml(String(row.username || '-'))}</td>
           <td>${escapeHtml(fmtTs(row.created_at))}</td>
           <td>${(Array.isArray(row.tags) ? row.tags : []).map(t => `<kbd>${escapeHtml(t)}</kbd>`).join(' ')}</td>
-          <td title="${escapeHtml(String(row.summary || ''))}">${escapeHtml(shortText(row.summary, 100))}</td>
+          <td title="${escapeHtml(String(row.summary || ''))}">${escapeHtml(shortText(row.summary, 80))}</td>
+          <td>
+            <div style="display: flex; gap: 4px;">
+              ${row.scope === 'short' ? `
+                <button class="outline" style="padding: 2px 6px; font-size: 10px; margin: 0;"
+                  hx-post="${ADMIN_UI_PATH}/memories/${row.id}/promote"
+                  hx-target="#tab-content"
+                  hx-confirm="確定要將此記憶轉為長期記憶嗎？">
+                  晉升
+                </button>
+              ` : ''}
+              <button class="outline secondary" style="padding: 2px 6px; font-size: 10px; margin: 0;"
+                hx-delete="${ADMIN_UI_PATH}/memories/${row.id}"
+                hx-target="#tab-content"
+                hx-confirm="確定要刪除此筆記憶嗎？">
+                刪除
+              </button>
+            </div>
+          </td>
         </tr>
       `).join('')}
     </tbody>
@@ -323,7 +350,49 @@ async function renderMemoriesPartial(urlObj) {
 </div>`;
 }
 
+async function renderContextsPartial() {
+  const { chatContextStore } = require('../stores');
+  const rows = await chatContextStore.listRecentChannels().catch(() => []);
 
+  return `
+<div class="card-header">
+  <h2>對話上下文管理</h2>
+  <span class="muted">顯示最近活動的 ${rows.length} 個頻道</span>
+</div>
+<div class="overflow-auto">
+  <table class="striped">
+    <thead>
+      <tr>
+        <th>頻道 ID</th>
+        <th>最後更新</th>
+        <th>最近對話摘要</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map((row) => {
+        const history = safeJsonParse(row.history_json, []);
+        const summary = history.map(h => `${h.role === 'user' ? 'U' : 'A'}: ${shortText(h.text, 30)}`).join('<br>');
+        return `
+          <tr>
+            <td><code>${escapeHtml(row.channel_id)}</code></td>
+            <td>${escapeHtml(fmtTs(row.updated_at))}</td>
+            <td style="font-size: 11px; line-height: 1.2;">${summary}</td>
+            <td>
+              <button class="outline secondary" style="padding: 2px 8px; font-size: 11px; margin: 0;"
+                hx-delete="${ADMIN_UI_PATH}/contexts/${row.channel_id}"
+                hx-target="#tab-content"
+                hx-confirm="確定要清除頻道 ${row.channel_id} 的所有對話背景嗎？這會讓機器人忘記之前的對話。">
+                清除背景
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('')}
+    </tbody>
+  </table>
+</div>`;
+}
 
 module.exports = {
   isAdminAuthorized,
@@ -333,4 +402,5 @@ module.exports = {
   renderDashboardPartial,
   renderSchedulesPartial,
   renderMemoriesPartial,
+  renderContextsPartial,
 };

@@ -132,14 +132,19 @@ function startServer(handleChatRequest) {
         sendHtml(res, 200, await renderMemoriesPartial(url));
         return;
       }
-      
+      if (url.pathname === `${ADMIN_UI_PATH}/partials/contexts`) {
+        sendHtml(res, 200, await renderContextsPartial());
+        return;
+      }
+
+      // Cancel Schedule
       const cancelMatch = url.pathname.match(new RegExp(`^${ADMIN_UI_PATH}/schedules/(\\d+)/cancel$`));
       if (req.method === 'POST' && cancelMatch) {
         const jobId = cancelMatch[1];
         try {
           const { schedulerStore } = require('../stores');
           await schedulerStore.cancelJob(jobId);
-          sendHtml(res, 200, await renderSchedulesPartial());
+          sendHtml(res, 200, await renderSchedulesPartial(url));
         } catch (err) {
           log(`Admin cancel job failed: ${err.message}`);
           sendHtml(res, 500, `<mark>取消失敗: ${err.message}</mark>`);
@@ -147,7 +152,53 @@ function startServer(handleChatRequest) {
         return;
       }
 
+      // Memory Promotion (Short -> Long)
+      const promoteMatch = url.pathname.match(new RegExp(`^${ADMIN_UI_PATH}/memories/(.+)/promote$`));
+      if (req.method === 'POST' && promoteMatch) {
+        const memoryId = promoteMatch[1];
+        try {
+          const { memoryStore } = require('../stores');
+          await memoryStore.promoteToLongTerm(memoryId);
+          sendHtml(res, 200, await renderMemoriesPartial(url));
+        } catch (err) {
+          log(`Admin promote memory failed: ${err.message}`);
+          sendHtml(res, 500, `<mark>晉升失敗: ${err.message}</mark>`);
+        }
+        return;
+      }
+
+      // Memory Deletion
+      const memoryDeleteMatch = url.pathname.match(new RegExp(`^${ADMIN_UI_PATH}/memories/(.+)$`));
+      if (req.method === 'DELETE' && memoryDeleteMatch) {
+        const memoryId = memoryDeleteMatch[1];
+        try {
+          const { memoryStore } = require('../stores');
+          await memoryStore.deleteMemory(memoryId);
+          sendHtml(res, 200, await renderMemoriesPartial(url));
+        } catch (err) {
+          log(`Admin delete memory failed: ${err.message}`);
+          sendHtml(res, 500, `<mark>刪除失敗: ${err.message}</mark>`);
+        }
+        return;
+      }
+
+      // Context Deletion
+      const contextDeleteMatch = url.pathname.match(new RegExp(`^${ADMIN_UI_PATH}/contexts/(.+)$`));
+      if (req.method === 'DELETE' && contextDeleteMatch) {
+        const channelId = contextDeleteMatch[1];
+        try {
+          const { chatContextStore } = require('../stores');
+          await chatContextStore.deleteContext(channelId);
+          sendHtml(res, 200, await renderContextsPartial());
+        } catch (err) {
+          log(`Admin delete context failed: ${err.message}`);
+          sendHtml(res, 500, `<mark>清除失敗: ${err.message}</mark>`);
+        }
+        return;
+      }
+
       // Backward compatibility for admin files if needed, but /files/ is preferred
+
       if (url.pathname.startsWith(`${ADMIN_UI_PATH}/files/`)) {
         const filename = url.pathname.slice(`${ADMIN_UI_PATH}/files/`.length);
         await serveStaticFile(req, res, filename);
