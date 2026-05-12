@@ -193,12 +193,30 @@ async function renderDashboardPartial() {
 </table>`;
 }
 
-async function renderSchedulesPartial() {
-  const rows = await schedulerStore.listJobsAll(ADMIN_UI_SCHEDULE_LIMIT).catch(() => []);
+async function renderSchedulesPartial(urlObj) {
+  const statusFilter = urlObj ? urlObj.searchParams.get('status') : 'active';
+  const rowsAll = await schedulerStore.listJobsAll(ADMIN_UI_SCHEDULE_LIMIT).catch(() => []);
+
+  const rows = statusFilter && statusFilter !== 'all' 
+    ? rowsAll.filter(r => r.status === statusFilter)
+    : rowsAll;
+
+  const statuses = ['active', 'running', 'done', 'failed', 'paused', 'canceled'];
+
   return `
 <div class="card-header">
   <h2>排程列表</h2>
-  <span class="muted">最近 ${rows.length} 筆</span>
+  <div style="display: flex; gap: 8px; align-items: center;">
+    <span class="muted">篩選狀態:</span>
+    <select name="status" 
+      hx-get="${ADMIN_UI_PATH}/partials/schedules" 
+      hx-target="#tab-content" 
+      style="margin: 0; padding: 4px 8px; width: auto; font-size: 13px;">
+      <option value="all" ${statusFilter === 'all' ? 'selected' : ''}>全部</option>
+      ${statuses.map(s => `<option value="${s}" ${statusFilter === s ? 'selected' : ''}>${s}</option>`).join('')}
+    </select>
+    <span class="muted">共 ${rows.length} 筆</span>
+  </div>
 </div>
 <div class="overflow-auto">
   <table class="striped">
@@ -216,7 +234,7 @@ async function renderSchedulesPartial() {
     </thead>
     <tbody>
       ${rows.map((row) => {
-        const statusClass = row.status === 'done' ? 'status-done' : (row.status === 'pending' ? 'status-pending' : 'status-failed');
+        const statusClass = row.status === 'done' ? 'status-done' : (row.status === 'pending' || row.status === 'active' ? 'status-pending' : 'status-failed');
         const canCancel = ['active', 'running', 'paused', 'failed'].includes(row.status);
         return `
           <tr>
@@ -253,17 +271,26 @@ async function renderSchedulesPartial() {
 </div>`;
 }
 
-
-async function renderMemoriesPartial() {
+async function renderMemoriesPartial(urlObj) {
+  const search = urlObj ? urlObj.searchParams.get('search') : '';
   const rows = await memoryStore.listRecent({
     project: MEMORY_PROJECT,
     limit: ADMIN_UI_MEMORY_LIMIT,
+    search: search
   }).catch(() => []);
 
   return `
 <div class="card-header">
   <h2>記憶列表</h2>
-  <span class="muted">project=${escapeHtml(MEMORY_PROJECT)}</span>
+  <div style="display: flex; gap: 8px; align-items: center;">
+    <input type="search" name="search" value="${escapeHtml(search)}" 
+      placeholder="搜尋摘要或標籤..."
+      hx-get="${ADMIN_UI_PATH}/partials/memories"
+      hx-trigger="keyup changed delay:500ms, search"
+      hx-target="#tab-content"
+      style="margin: 0; padding: 4px 8px; width: 250px; font-size: 13px;" />
+    <span class="muted">project=${escapeHtml(MEMORY_PROJECT)}</span>
+  </div>
 </div>
 <div class="overflow-auto">
   <table class="striped">
@@ -295,6 +322,7 @@ async function renderMemoriesPartial() {
   </table>
 </div>`;
 }
+
 
 
 module.exports = {

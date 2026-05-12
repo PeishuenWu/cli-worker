@@ -458,6 +458,7 @@ class MemoryStore {
 
     const project = opts.project || this.project;
     const limit = Math.max(1, Math.min(Number(opts.limit || 50), 200));
+    const search = String(opts.search || '').trim().toLowerCase();
 
     if (this.mode === 'fallback') {
       await this.ensureFallbackFile();
@@ -467,7 +468,17 @@ class MemoryStore {
         .filter(Boolean)
         .map((line) => safeJsonParse(line, null))
         .filter(Boolean)
-        .filter((x) => x.project === project)
+        .filter((x) => x.project === project);
+
+      let filtered = items;
+      if (search) {
+        filtered = items.filter((x) => {
+          const text = `${x.summary || ''} ${x.text || ''} ${(x.tags || []).join(' ')}`.toLowerCase();
+          return text.includes(search);
+        });
+      }
+
+      return filtered
         .slice(-limit)
         .reverse()
         .map((x) => ({
@@ -483,7 +494,20 @@ class MemoryStore {
           created_at: x.created_at || '',
           expires_at: x.expires_at || '',
         }));
-      return items;
+    }
+
+    const mustFilters = [
+      {
+        key: 'project',
+        match: { value: project },
+      },
+    ];
+
+    const shouldFilters = [];
+    if (search) {
+      shouldFilters.push({ key: 'summary', match: { text: search } });
+      shouldFilters.push({ key: 'text', match: { text: search } });
+      shouldFilters.push({ key: 'tags', match: { any: [search] } });
     }
 
     const body = {
@@ -491,12 +515,8 @@ class MemoryStore {
       with_payload: true,
       with_vector: false,
       filter: {
-        must: [
-          {
-            key: 'project',
-            match: { value: project },
-          },
-        ],
+        must: mustFilters,
+        should: shouldFilters.length > 0 ? shouldFilters : undefined,
       },
     };
 

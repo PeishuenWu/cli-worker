@@ -125,11 +125,11 @@ function startServer(handleChatRequest) {
         return;
       }
       if (url.pathname === `${ADMIN_UI_PATH}/partials/schedules`) {
-        sendHtml(res, 200, await renderSchedulesPartial());
+        sendHtml(res, 200, await renderSchedulesPartial(url));
         return;
       }
       if (url.pathname === `${ADMIN_UI_PATH}/partials/memories`) {
-        sendHtml(res, 200, await renderMemoriesPartial());
+        sendHtml(res, 200, await renderMemoriesPartial(url));
         return;
       }
       
