@@ -132,6 +132,21 @@ function startServer(handleChatRequest) {
         sendHtml(res, 200, await renderMemoriesPartial());
         return;
       }
+      
+      const cancelMatch = url.pathname.match(new RegExp(`^${ADMIN_UI_PATH}/schedules/(\\d+)/cancel$`));
+      if (req.method === 'POST' && cancelMatch) {
+        const jobId = cancelMatch[1];
+        try {
+          const { schedulerStore } = require('../stores');
+          await schedulerStore.cancelJob(jobId);
+          sendHtml(res, 200, await renderSchedulesPartial());
+        } catch (err) {
+          log(`Admin cancel job failed: ${err.message}`);
+          sendHtml(res, 500, `<mark>取消失敗: ${err.message}</mark>`);
+        }
+        return;
+      }
+
       // Backward compatibility for admin files if needed, but /files/ is preferred
       if (url.pathname.startsWith(`${ADMIN_UI_PATH}/files/`)) {
         const filename = url.pathname.slice(`${ADMIN_UI_PATH}/files/`.length);

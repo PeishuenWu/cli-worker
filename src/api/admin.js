@@ -183,11 +183,13 @@ async function renderSchedulesPartial() {
         <th>對象/頻道</th>
         <th>任務內容</th>
         <th>重試</th>
+        <th>操作</th>
       </tr>
     </thead>
     <tbody>
       ${rows.map((row) => {
         const statusClass = row.status === 'done' ? 'status-done' : (row.status === 'pending' ? 'status-pending' : 'status-failed');
+        const canCancel = ['active', 'running', 'paused', 'failed'].includes(row.status);
         return `
           <tr>
             <td>${escapeHtml(String(row.id || ''))}</td>
@@ -203,6 +205,18 @@ async function renderSchedulesPartial() {
             </td>
             <td title="${escapeHtml(String(row.prompt || ''))}">${escapeHtml(shortText(row.prompt, 60))}</td>
             <td>${escapeHtml(String(row.retry_count || 0))}/${escapeHtml(String(row.max_retries || 0))}</td>
+            <td>
+              ${canCancel ? `
+                <button 
+                  class="outline secondary" 
+                  style="padding: 2px 8px; font-size: 11px; margin: 0;"
+                  hx-post="${ADMIN_UI_PATH}/schedules/${row.id}/cancel"
+                  hx-target="#schedules"
+                  hx-confirm="確定要取消排程 #${row.id} 嗎？">
+                  取消
+                </button>
+              ` : '-'}
+            </td>
           </tr>
         `;
       }).join('')}
@@ -210,6 +224,7 @@ async function renderSchedulesPartial() {
   </table>
 </div>`;
 }
+
 
 async function renderMemoriesPartial() {
   const rows = await memoryStore.listRecent({
