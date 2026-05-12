@@ -79,7 +79,7 @@ function renderAdminPage() {
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <style>
     :root { --pico-font-size: 14px; }
-    body { padding-top: 2rem; }
+    body { padding-top: 1rem; }
     .muted { color: var(--pico-muted-color); font-size: 0.85rem; }
     code { font-size: 0.8rem; }
     table { --pico-font-size: 13px; }
@@ -89,9 +89,18 @@ function renderAdminPage() {
     .status-done { background: #d4edda; color: #155724; }
     .status-pending { background: #fff3cd; color: #856404; }
     .status-failed { background: #f8d7da; color: #721c24; }
+    
+    nav[role="tablist"] { margin-bottom: 2rem; border-bottom: 1px solid var(--pico-muted-border-color); }
+    nav[role="tablist"] button { 
+      background: transparent; border: none; border-bottom: 3px solid transparent; 
+      border-radius: 0; color: var(--pico-muted-color); margin-bottom: -1px;
+    }
+    nav[role="tablist"] button.active { 
+      color: var(--pico-primary); border-bottom-color: var(--pico-primary); 
+    }
   </style>
 </head>
-<body>
+<body hx-boost="true">
   <main class="container">
     <header>
       <hgroup>
@@ -100,32 +109,51 @@ function renderAdminPage() {
       </hgroup>
     </header>
 
-    <div class="grid">
-      <article id="dashboard"
-        hx-get="${ADMIN_UI_PATH}/partials/dashboard"
-        hx-trigger="load, every 10s"
-        hx-swap="innerHTML">
-        <p aria-busy="true">讀取系統總覽...</p>
-      </article>
+    <nav role="tablist">
+      <ul>
+        <li>
+          <button class="active" 
+            hx-get="${ADMIN_UI_PATH}/partials/dashboard" 
+            hx-target="#tab-content"
+            onclick="switchTab(this)">
+            系統總覽
+          </button>
+        </li>
+        <li>
+          <button 
+            hx-get="${ADMIN_UI_PATH}/partials/schedules" 
+            hx-target="#tab-content"
+            onclick="switchTab(this)">
+            排程管理
+          </button>
+        </li>
+        <li>
+          <button 
+            hx-get="${ADMIN_UI_PATH}/partials/memories" 
+            hx-target="#tab-content"
+            onclick="switchTab(this)">
+            記憶列表
+          </button>
+        </li>
+      </ul>
+    </nav>
 
-      <article id="schedules"
-        hx-get="${ADMIN_UI_PATH}/partials/schedules"
-        hx-trigger="load, every 10s"
-        hx-swap="innerHTML">
-        <p aria-busy="true">讀取排程列表...</p>
-      </article>
+    <div id="tab-content" hx-get="${ADMIN_UI_PATH}/partials/dashboard" hx-trigger="load">
+      <p aria-busy="true">載入中...</p>
     </div>
 
-    <article id="memories"
-      hx-get="${ADMIN_UI_PATH}/partials/memories"
-      hx-trigger="load, every 15s"
-      hx-swap="innerHTML">
-      <p aria-busy="true">讀取記憶列表...</p>
-    </article>
   </main>
+
+  <script>
+    function switchTab(el) {
+      document.querySelectorAll('nav[role="tablist"] button').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+    }
+  </script>
 </body>
 </html>`;
 }
+
 
 async function renderDashboardPartial() {
   const statusCounts = await schedulerStore.getStatusCounts().catch(() => ({}));
