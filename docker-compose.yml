@@ -88,6 +88,10 @@ services:
       OLLAMA_API_URL: "${OLLAMA_API_URL:-http://host.docker.internal:11434}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
     restart: unless-stopped
 
 volumes:
