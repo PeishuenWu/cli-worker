@@ -524,6 +524,7 @@ async function renderChatPartial() {
     
     let ws = null;
     let requestId = 0;
+    let initId = -1;
     let currentThreadId = null;
     let currentMessageDiv = null;
     let currentMessageText = '';
@@ -547,20 +548,25 @@ async function renderChatPartial() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = \`\${protocol}//\${window.location.host}${ADMIN_UI_PATH}/ws\`;
       
+      appendMessage('system', \`正在連線至 \${wsUrl}...\`);
       ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
         updateStatus('已連線', '#28a745');
-        // 1. Initialize
-        sendRpc('initialize', {
+        appendMessage('system', 'WebSocket 已開啟，正在發送 initialize 請求...');
+        initId = sendRpc('initialize', {
           clientInfo: { name: 'codex-worker-web', version: '1.0.0' },
           capabilities: { experimentalApi: true }
         });
       };
       
-      ws.onclose = () => {
+      ws.onclose = (e) => {
         updateStatus('連線中斷', '#dc3545');
-        // Retry logic handled by partial reload if needed, or manual
+        appendMessage('system', \`連線已關閉 (code=\${e.code}, reason=\${e.reason})\`);
+      };
+
+      ws.onerror = (e) => {
+        appendMessage('system', 'WebSocket 發生錯誤');
       };
       
       ws.onmessage = (e) => {
@@ -576,8 +582,9 @@ async function renderChatPartial() {
     }
 
     function handleRpc(msg) {
-      // Handshake: initialized notification follows initialize request
-      if (msg.method === 'initialized') {
+      if (msg.id === initId && msg.result) {
+        appendMessage('system', '收到初始化回應，發送 initialized 通知...');
+        ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'initialized', params: {} }));
         sendRpc('thread/start', {});
       } else if (msg.result && msg.result.thread) {
         currentThreadId = msg.result.thread.id;
@@ -597,7 +604,6 @@ async function renderChatPartial() {
         if (msg.params.item.type === 'agentMessage') {
           if (currentMessageDiv) {
             currentMessageDiv.classList.remove('typing-indicator');
-            // Final text might be slightly different or same
             currentMessageDiv.textContent = msg.params.item.text;
             currentMessageDiv = null;
           }
@@ -607,7 +613,7 @@ async function renderChatPartial() {
         sendBtn.disabled = false;
         chatInput.focus();
       } else if (msg.error) {
-        appendMessage('system', \`Error: \${msg.error.message}\`);
+        appendMessage('system', \`RPC Error: \${msg.error.message}\`);
         chatInput.disabled = false;
         sendBtn.disabled = false;
       }
