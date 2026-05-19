@@ -409,34 +409,56 @@ async function renderEventsPartial() {
   <h2>實時動態 (SSE Activity)</h2>
   <span class="muted">根據 OpenAI App-Server 模型實現的實時監控</span>
 </div>
-<div hx-ext="sse" sse-connect="${ADMIN_UI_PATH}/events" sse-swap="log" hx-swap="afterbegin" target="#log-stream">
-  <div id="log-stream" style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 8px; font-family: monospace; height: 500px; overflow-y: auto; font-size: 12px;">
-    <div style="color: #6a9955;">[System] SSE 連線已建立，等待事件中...</div>
+<div hx-ext="sse" sse-connect="${ADMIN_UI_PATH}/events">
+  <div id="log-stream" style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 8px; font-family: 'Cascadia Code', 'Fira Code', monospace; height: 600px; overflow-y: auto; font-size: 12px; line-height: 1.5; border: 1px solid #333; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);">
+    <div style="color: #6a9955; border-bottom: 1px dashed #444; margin-bottom: 8px; padding-bottom: 4px;">[System] SSE 連線已建立，等待事件中...</div>
   </div>
 </div>
 <script>
-  // Script to handle incoming log events from SSE
-  document.body.addEventListener('htmx:sseBeforeMessage', function(e) {
+  // Clean up existing listeners if any (though HTMX partials might re-run this)
+  if (window._logListener) {
+    document.body.removeEventListener('htmx:sseMessage', window._logListener);
+  }
+
+  window._logListener = function(e) {
+    // htmx:sseMessage is fired for any event. Check e.detail.type
     if (e.detail.type === 'log') {
-      const data = JSON.parse(e.detail.data);
-      const logStream = document.getElementById('log-stream');
-      const div = document.createElement('div');
-      const color = data.level === 'error' ? '#f44336' : (data.level === 'warn' ? '#ff9800' : '#d4d4d4');
-      const rid = data.requestId ? \` <span style="color: #569cd6;">[\${data.requestId}]</span>\` : '';
-      div.innerHTML = \`<span style="color: #808080;">\${data.timestamp}</span> <span style="color: \${color}; font-weight: bold;">\${data.level.toUpperCase()}</span>\${rid} \${data.message}\`;
-      logStream.insertBefore(div, logStream.firstChild);
-      
-      // Keep only last 100 entries
-      if (logStream.children.length > 100) {
-        logStream.removeChild(logStream.lastChild);
+      try {
+        const data = JSON.parse(e.detail.data);
+        const logStream = document.getElementById('log-stream');
+        if (!logStream) return;
+
+        const div = document.createElement('div');
+        div.style.marginBottom = '2px';
+        div.style.whiteSpace = 'pre-wrap';
+        div.style.wordBreak = 'break-all';
+        
+        const timestamp = new Date(data.timestamp).toLocaleTimeString();
+        const color = data.level === 'error' ? '#f44336' : (data.level === 'warn' ? '#ff9800' : '#d4d4d4');
+        const levelBadge = \`<span style="color: \${color}; font-weight: bold; min-width: 50px; display: inline-block;">\${data.level.toUpperCase()}</span>\`;
+        const rid = data.requestId ? \`<span style="color: #569cd6;"> [\${data.requestId}]</span>\` : '';
+        
+        div.innerHTML = \`<span style="color: #808080;">[\${timestamp}]</span> \${levelBadge}\${rid} \${escapeHtml(data.message)}\`;
+        
+        logStream.insertBefore(div, logStream.firstChild);
+        
+        // Auto-cleanup: keep last 200 lines
+        if (logStream.children.length > 200) {
+          logStream.removeChild(logStream.lastChild);
+        }
+      } catch (err) {
+        console.error('Failed to parse SSE log data', err);
       }
-      
-      // Prevent htmx from swapping if we handle it manually, 
-      // but here we used hx-swap="afterbegin" so we don't need manual DOM manipulation 
-      // unless we want special formatting. 
-      // Actually, hx-swap="afterbegin" with a template might be easier.
     }
-  });
+  };
+
+  document.body.addEventListener('htmx:sseMessage', window._logListener);
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
 </script>
 `;
 }
