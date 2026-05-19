@@ -24,9 +24,10 @@ if [ "${CHAT_BRIDGE_ENABLE:-false}" = "true" ]; then
   # We use 127.0.0.1 for security, only accessible via our Node.js proxy
   runuser -u codex -- codex app-server --listen ws://127.0.0.1:9090 \
     --ws-auth capability-token --ws-token-file "$APP_SERVER_TOKEN_FILE" \
-    --sandbox workspace-write &
+    -c sandbox="workspace-write" &
 
-  runuser -u codex -- node /home/codex/chat_bridge.js &
+  NP=$(npm root -g)
+  runuser -u codex -- env NODE_PATH="$NP" node /home/codex/chat_bridge.js &
 fi
 
 # Start GgySSH Web Terminal

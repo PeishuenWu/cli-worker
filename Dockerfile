@@ -29,7 +29,7 @@ RUN apt-get update \
        > /etc/apt/sources.list.d/nodesource.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends nodejs \
-    && npm i -g @openai/codex@${CODEX_NPM_VERSION} \
+    && npm i -g @openai/codex@${CODEX_NPM_VERSION} ws \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*
 
