@@ -10,6 +10,14 @@ const { metrics } = require('../logger');
 const { schedulerStore, memoryStore } = require('../stores');
 const { parseCookies, escapeHtml, shortText, fmtTs } = require('../utils');
 
+function safeJsonParse(s, fallback) {
+  try {
+    return JSON.parse(s);
+  } catch (_e) {
+    return fallback;
+  }
+}
+
 function getAdminTokenFromRequest(req, urlObj) {
   const authHeader = String(req.headers.authorization || '');
   if (authHeader.toLowerCase().startsWith('bearer ')) {
