@@ -160,6 +160,14 @@ function renderAdminPage() {
             實時動態 (SSE)
           </button>
         </li>
+        <li>
+          <button 
+            hx-get="${ADMIN_UI_PATH}/partials/chat" 
+            hx-target="#tab-content"
+            onclick="switchTab(this)">
+            對話測試 (Chat)
+          </button>
+        </li>
       </ul>
     </nav>
 
@@ -471,6 +479,176 @@ async function renderEventsPartial() {
 `;
 }
 
+async function renderChatPartial() {
+  return `
+<div class="card-header">
+  <h2>對話測試 (Codex Chat)</h2>
+  <span class="muted">基於 codex app-server 的原生對話體驗</span>
+</div>
+
+<div id="chat-container" style="display: flex; flex-direction: column; height: calc(100vh - 350px); background: #111; border-radius: 8px; border: 1px solid #333; overflow: hidden;">
+  <div id="chat-messages" style="flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+    <div style="text-align: center; color: #666; font-size: 0.9rem; margin-top: 2rem;">
+      <p>歡迎來到 Codex Chat！這裡可以直接與後端的 app-server 溝通。</p>
+      <p>訊息會即時透過 WebSocket 串流傳輸。</p>
+    </div>
+  </div>
+  
+  <div id="chat-input-area" style="padding: 1rem; background: #1a1a1a; border-top: 1px solid #333;">
+    <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
+      <textarea id="chat-input" placeholder="輸入訊息... (Shift+Enter 換行, Enter 送出)" rows="1" 
+        style="margin: 0; background: #222; border-color: #444; color: #eee; resize: none; overflow-y: hidden; min-height: 44px;"></textarea>
+      <button id="chat-send-btn" style="width: auto; margin: 0; padding: 0.5rem 1rem; height: 44px;">送出</button>
+    </div>
+    <div id="chat-status" class="muted" style="margin-top: 0.5rem; font-size: 0.75rem;">
+      連線狀態: <span id="ws-status">正在連線...</span>
+    </div>
+  </div>
+</div>
+
+<style>
+  .msg { max-width: 85%; padding: 0.75rem 1rem; border-radius: 12px; line-height: 1.5; position: relative; word-break: break-word; font-size: 14px; }
+  .msg-user { align-self: flex-end; background: #007bff; color: white; border-bottom-right-radius: 2px; }
+  .msg-assistant { align-self: flex-start; background: #333; color: #eee; border-bottom-left-radius: 2px; border: 1px solid #444; }
+  .msg-system { align-self: center; background: rgba(255,255,255,0.05); color: #888; font-size: 0.8rem; border-radius: 4px; padding: 0.25rem 0.75rem; }
+  .typing-indicator::after { content: '...'; animation: typing 1.5s infinite; }
+  @keyframes typing { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
+</style>
+
+<script>
+  (function() {
+    const chatMessages = document.getElementById('chat-messages');
+    const chatInput = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('chat-send-btn');
+    const wsStatus = document.getElementById('ws-status');
+    
+    let ws = null;
+    let requestId = 0;
+    let currentThreadId = null;
+    let currentMessageDiv = null;
+    let currentMessageText = '';
+    
+    function appendMessage(role, text, isStreaming = false) {
+      const div = document.createElement('div');
+      div.className = \`msg msg-\${role}\`;
+      if (isStreaming) div.classList.add('typing-indicator');
+      div.textContent = text;
+      chatMessages.appendChild(div);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+      return div;
+    }
+
+    function updateStatus(text, color) {
+      wsStatus.textContent = text;
+      wsStatus.style.color = color || 'inherit';
+    }
+
+    function connect() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = \`\${protocol}//\${window.location.host}${ADMIN_UI_PATH}/ws\`;
+      
+      ws = new WebSocket(wsUrl);
+      
+      ws.onopen = () => {
+        updateStatus('已連線', '#28a745');
+        // 1. Initialize
+        sendRpc('initialize', {
+          clientInfo: { name: 'codex-worker-web', version: '1.0.0' },
+          capabilities: { experimentalApi: true }
+        });
+      };
+      
+      ws.onclose = () => {
+        updateStatus('連線中斷', '#dc3545');
+        // Retry logic handled by partial reload if needed, or manual
+      };
+      
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        handleRpc(msg);
+      };
+    }
+
+    function sendRpc(method, params) {
+      const id = ++requestId;
+      ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
+      return id;
+    }
+
+    function handleRpc(msg) {
+      // Handshake: initialized notification follows initialize request
+      if (msg.method === 'initialized') {
+        sendRpc('thread/start', {});
+      } else if (msg.result && msg.result.thread) {
+        currentThreadId = msg.result.thread.id;
+        appendMessage('system', \`執行緒已建立: \${currentThreadId}\`);
+      } else if (msg.method === 'item/started') {
+        if (msg.params.item.type === 'agentMessage') {
+          currentMessageDiv = appendMessage('assistant', '', true);
+          currentMessageText = '';
+        }
+      } else if (msg.method === 'item/agentMessage/delta') {
+        if (currentMessageDiv) {
+          currentMessageText += msg.params.delta;
+          currentMessageDiv.textContent = currentMessageText;
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+      } else if (msg.method === 'item/completed') {
+        if (msg.params.item.type === 'agentMessage') {
+          if (currentMessageDiv) {
+            currentMessageDiv.classList.remove('typing-indicator');
+            // Final text might be slightly different or same
+            currentMessageDiv.textContent = msg.params.item.text;
+            currentMessageDiv = null;
+          }
+        }
+      } else if (msg.method === 'turn/completed') {
+        chatInput.disabled = false;
+        sendBtn.disabled = false;
+        chatInput.focus();
+      } else if (msg.error) {
+        appendMessage('system', \`Error: \${msg.error.message}\`);
+        chatInput.disabled = false;
+        sendBtn.disabled = false;
+      }
+    }
+
+    function sendMessage() {
+      const text = chatInput.value.trim();
+      if (!text || !currentThreadId || chatInput.disabled) return;
+      
+      appendMessage('user', text);
+      chatInput.value = '';
+      chatInput.style.height = 'auto';
+      chatInput.disabled = true;
+      sendBtn.disabled = true;
+      
+      sendRpc('turn/start', {
+        threadId: currentThreadId,
+        input: [{ type: 'text', text }]
+      });
+    }
+
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+    
+    sendBtn.addEventListener('click', sendMessage);
+    
+    chatInput.addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = (this.scrollHeight) + 'px';
+    });
+
+    connect();
+  })();
+</script>
+`;
+}
+
 module.exports = {
   isAdminAuthorized,
   setAdminAuthCookieIfNeeded,
@@ -481,4 +659,5 @@ module.exports = {
   renderMemoriesPartial,
   renderContextsPartial,
   renderEventsPartial,
+  renderChatPartial,
 };

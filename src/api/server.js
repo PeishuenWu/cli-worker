@@ -1,15 +1,18 @@
 const http = require('http');
 const https = require('https');
+const fs = require('fs');
 const { URL } = require('url');
+const WebSocket = require('ws');
 const { 
   PORT, ADMIN_UI_PATH, ADMIN_UI_ENABLE, ADMIN_AUTH_TOKEN, 
-  TASK_CONCURRENCY, TASK_QUEUE_MAX, PATHNAME 
+  TASK_CONCURRENCY, TASK_QUEUE_MAX, PATHNAME,
+  APP_SERVER_TOKEN_FILE, APP_SERVER_WS_URL
 } = require('../config');
 const { log, getLogContext } = require('../logger');
 const { 
   isAdminAuthorized, setAdminAuthCookieIfNeeded, serveStaticFile, 
   renderAdminPage, renderDashboardPartial, renderSchedulesPartial, renderMemoriesPartial,
-  renderContextsPartial, renderEventsPartial
+  renderContextsPartial, renderEventsPartial, renderChatPartial
 } = require('./admin');
 
 function generateRequestId() {
@@ -162,6 +165,10 @@ function startServer(handleChatRequest) {
         sendHtml(res, 200, await renderEventsPartial());
         return;
       }
+      if (url.pathname === `${ADMIN_UI_PATH}/partials/chat`) {
+        sendHtml(res, 200, await renderChatPartial());
+        return;
+      }
 
       // Cancel Schedule
       const cancelMatch = url.pathname.match(new RegExp(`^${ADMIN_UI_PATH}/schedules/(\\d+)/cancel$`));
@@ -236,6 +243,67 @@ function startServer(handleChatRequest) {
     if (!handled && !res.headersSent) {
       sendJson(res, 404, { error: 'not_found' });
     }
+  });
+
+  // WebSocket Proxy for codex app-server
+  server.on('upgrade', (req, socket, head) => {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    
+    if (ADMIN_UI_ENABLE === 'true' && url.pathname === `${ADMIN_UI_PATH}/ws`) {
+      if (!isAdminAuthorized(req, url)) {
+        log('Unauthorized WS upgrade attempt', { level: 'warn' });
+        socket.destroy();
+        return;
+      }
+
+      // Read internal app-server token
+      let appServerToken = '';
+      try {
+        if (fs.existsSync(APP_SERVER_TOKEN_FILE)) {
+          appServerToken = fs.readFileSync(APP_SERVER_TOKEN_FILE, 'utf8').trim();
+        }
+      } catch (err) {
+        log(`Failed to read app-server token: ${err.message}`, { level: 'error' });
+      }
+
+      const wss = new WebSocket.Server({ noServer: true });
+      wss.handleUpgrade(req, socket, head, (clientWs) => {
+        log('Admin WS connected, proxying to codex app-server');
+        
+        const targetWs = new WebSocket(APP_SERVER_WS_URL, {
+          headers: {
+            'Authorization': `Bearer ${appServerToken}`
+          }
+        });
+
+        const bridge = (src, dst) => {
+          src.on('message', (data) => {
+            if (dst.readyState === WebSocket.OPEN) {
+              dst.send(data);
+            }
+          });
+          src.on('error', (err) => {
+            log(`WS Bridge Error: ${err.message}`, { level: 'error' });
+            dst.close();
+          });
+          src.on('close', () => dst.close());
+        };
+
+        targetWs.on('open', () => {
+          bridge(clientWs, targetWs);
+          bridge(targetWs, clientWs);
+        });
+
+        targetWs.on('error', (err) => {
+          log(`Failed to connect to app-server WS: ${err.message}`, { level: 'error' });
+          clientWs.close();
+        });
+      });
+      return;
+    }
+
+    // Default: destroy unknown upgrades
+    socket.destroy();
   });
 
   server.listen(PORT, '0.0.0.0', () => {

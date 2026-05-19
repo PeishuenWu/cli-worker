@@ -67,6 +67,9 @@ const ADMIN_UI_MEMORY_LIMIT = Number(process.env.ADMIN_UI_MEMORY_LIMIT || 50);
 const ADMIN_UI_SCHEDULE_LIMIT = Number(process.env.ADMIN_UI_SCHEDULE_LIMIT || 100);
 const ADMIN_AUTH_TOKEN = (process.env.ADMIN_AUTH_TOKEN || '').trim();
 
+const APP_SERVER_TOKEN_FILE = process.env.APP_SERVER_TOKEN_FILE || '/home/codex/.codex/app-server-token';
+const APP_SERVER_WS_URL = process.env.APP_SERVER_WS_URL || 'ws://127.0.0.1:9090';
+
 const DEFAULT_CHAT_ID = (process.env.DEFAULT_CHAT_ID || '').trim();
 const SYNCHAT_FILE_URL_BASE = (process.env.SYNCHAT_FILE_URL_BASE || '').trim();
 
@@ -140,6 +143,8 @@ module.exports = {
   ADMIN_UI_MEMORY_LIMIT,
   ADMIN_UI_SCHEDULE_LIMIT,
   ADMIN_AUTH_TOKEN,
+  APP_SERVER_TOKEN_FILE,
+  APP_SERVER_WS_URL,
   DEFAULT_CHAT_ID,
   SYNCHAT_FILE_URL_BASE,
   allowedUsersSet,
