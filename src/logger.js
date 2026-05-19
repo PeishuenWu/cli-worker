@@ -1,5 +1,8 @@
 'use strict';
 
+const EventEmitter = require('events');
+const eventEmitter = new EventEmitter();
+
 const metrics = {
   started_at: new Date().toISOString(),
   scheduler_ticks_total: 0,
@@ -21,22 +24,30 @@ const LOG_FORMAT = process.env.LOG_FORMAT || 'text'; // 'text' or 'json'
 
 function log(msg, context = {}) {
   const timestamp = new Date().toISOString();
+  const level = context.level || 'info';
   
   if (LOG_FORMAT === 'json') {
     const logObj = {
       timestamp,
-      level: context.level || 'info',
+      level,
       message: typeof msg === 'string' ? msg : JSON.stringify(msg),
       ...context
     };
-    // Remove duplicate keys if any
     delete logObj.level;
-    console.log(JSON.stringify({ level: context.level || 'info', ...logObj }));
+    console.log(JSON.stringify({ level, ...logObj }));
   } else {
     const rid = context.requestId ? ` [${context.requestId}]` : '';
-    const level = context.level ? ` ${context.level.toUpperCase()}:` : '';
-    console.log(`${timestamp}${level}${rid} ${msg}`);
+    const levelStr = level ? ` ${level.toUpperCase()}:` : '';
+    console.log(`${timestamp}${levelStr}${rid} ${msg}`);
   }
+
+  // Emit event for real-time monitoring
+  eventEmitter.emit('log', {
+    timestamp,
+    level,
+    message: String(msg),
+    requestId: context.requestId
+  });
 }
 
 function getLogContext(requestId, level = 'info') {
@@ -47,4 +58,5 @@ module.exports = {
   metrics,
   log,
   getLogContext,
+  eventEmitter,
 };

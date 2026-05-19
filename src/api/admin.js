@@ -77,6 +77,7 @@ function renderAdminPage() {
   <title>Codex Worker 管理介面</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/sse.js"></script>
   <style>
     :root { --pico-font-size: 14px; }
     body { padding-top: 1rem; }
@@ -132,7 +133,7 @@ function renderAdminPage() {
             hx-get="${ADMIN_UI_PATH}/partials/contexts" 
             hx-target="#tab-content"
             onclick="switchTab(this)">
-            對話上下文
+            對話執行緒 (Threads)
           </button>
         </li>
         <li>
@@ -141,6 +142,14 @@ function renderAdminPage() {
             hx-target="#tab-content"
             onclick="switchTab(this)">
             記憶列表
+          </button>
+        </li>
+        <li>
+          <button 
+            hx-get="${ADMIN_UI_PATH}/partials/events" 
+            hx-target="#tab-content"
+            onclick="switchTab(this)">
+            實時動態 (SSE)
           </button>
         </li>
       </ul>
@@ -356,16 +365,16 @@ async function renderContextsPartial() {
 
   return `
 <div class="card-header">
-  <h2>對話上下文管理</h2>
-  <span class="muted">顯示最近活動的 ${rows.length} 個頻道</span>
+  <h2>對話執行緒 (Threads)</h2>
+  <span class="muted">顯示最近活動的 ${rows.length} 個執行緒</span>
 </div>
 <div class="overflow-auto">
   <table class="striped">
     <thead>
       <tr>
-        <th>頻道 ID</th>
+        <th>執行緒 ID (Channel)</th>
         <th>最後更新</th>
-        <th>最近對話摘要</th>
+        <th>對話回合 (Turns) 摘要</th>
         <th>操作</th>
       </tr>
     </thead>
@@ -382,8 +391,8 @@ async function renderContextsPartial() {
               <button class="outline secondary" style="padding: 2px 8px; font-size: 11px; margin: 0;"
                 hx-delete="${ADMIN_UI_PATH}/contexts/${row.channel_id}"
                 hx-target="#tab-content"
-                hx-confirm="確定要清除頻道 ${row.channel_id} 的所有對話背景嗎？這會讓機器人忘記之前的對話。">
-                清除背景
+                hx-confirm="確定要清除執行緒 ${row.channel_id} 的所有對話背景嗎？這會讓機器人忘記之前的對話。">
+                清除執行緒
               </button>
             </td>
           </tr>
@@ -392,6 +401,44 @@ async function renderContextsPartial() {
     </tbody>
   </table>
 </div>`;
+}
+
+async function renderEventsPartial() {
+  return `
+<div class="card-header">
+  <h2>實時動態 (SSE Activity)</h2>
+  <span class="muted">根據 OpenAI App-Server 模型實現的實時監控</span>
+</div>
+<div hx-ext="sse" sse-connect="${ADMIN_UI_PATH}/events" sse-swap="log" hx-swap="afterbegin" target="#log-stream">
+  <div id="log-stream" style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 8px; font-family: monospace; height: 500px; overflow-y: auto; font-size: 12px;">
+    <div style="color: #6a9955;">[System] SSE 連線已建立，等待事件中...</div>
+  </div>
+</div>
+<script>
+  // Script to handle incoming log events from SSE
+  document.body.addEventListener('htmx:sseBeforeMessage', function(e) {
+    if (e.detail.type === 'log') {
+      const data = JSON.parse(e.detail.data);
+      const logStream = document.getElementById('log-stream');
+      const div = document.createElement('div');
+      const color = data.level === 'error' ? '#f44336' : (data.level === 'warn' ? '#ff9800' : '#d4d4d4');
+      const rid = data.requestId ? \` <span style="color: #569cd6;">[\${data.requestId}]</span>\` : '';
+      div.innerHTML = \`<span style="color: #808080;">\${data.timestamp}</span> <span style="color: \${color}; font-weight: bold;">\${data.level.toUpperCase()}</span>\${rid} \${data.message}\`;
+      logStream.insertBefore(div, logStream.firstChild);
+      
+      // Keep only last 100 entries
+      if (logStream.children.length > 100) {
+        logStream.removeChild(logStream.lastChild);
+      }
+      
+      // Prevent htmx from swapping if we handle it manually, 
+      // but here we used hx-swap="afterbegin" so we don't need manual DOM manipulation 
+      // unless we want special formatting. 
+      // Actually, hx-swap="afterbegin" with a template might be easier.
+    }
+  });
+</script>
+`;
 }
 
 module.exports = {
@@ -403,4 +450,5 @@ module.exports = {
   renderSchedulesPartial,
   renderMemoriesPartial,
   renderContextsPartial,
+  renderEventsPartial,
 };

@@ -8,7 +8,8 @@ const {
 const { log, getLogContext } = require('../logger');
 const { 
   isAdminAuthorized, setAdminAuthCookieIfNeeded, serveStaticFile, 
-  renderAdminPage, renderDashboardPartial, renderSchedulesPartial, renderMemoriesPartial 
+  renderAdminPage, renderDashboardPartial, renderSchedulesPartial, renderMemoriesPartial,
+  renderContextsPartial, renderEventsPartial
 } = require('./admin');
 
 function generateRequestId() {
@@ -116,6 +117,27 @@ function startServer(handleChatRequest) {
       }
       setAdminAuthCookieIfNeeded(req, res, url);
 
+      // SSE Endpoint for real-time events
+      if (url.pathname === `${ADMIN_UI_PATH}/events`) {
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        });
+        
+        const { eventEmitter } = require('../logger');
+        const onLog = (data) => {
+          res.write(`event: log\ndata: ${JSON.stringify(data)}\n\n`);
+        };
+        
+        eventEmitter.on('log', onLog);
+        
+        req.on('close', () => {
+          eventEmitter.removeListener('log', onLog);
+        });
+        return;
+      }
+
       if (url.pathname === ADMIN_UI_PATH || url.pathname === `${ADMIN_UI_PATH}/`) {
         sendHtml(res, 200, renderAdminPage());
         return;
@@ -134,6 +156,10 @@ function startServer(handleChatRequest) {
       }
       if (url.pathname === `${ADMIN_UI_PATH}/partials/contexts`) {
         sendHtml(res, 200, await renderContextsPartial());
+        return;
+      }
+      if (url.pathname === `${ADMIN_UI_PATH}/partials/events`) {
+        sendHtml(res, 200, await renderEventsPartial());
         return;
       }
 
