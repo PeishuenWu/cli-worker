@@ -268,34 +268,43 @@ function startServer(handleChatRequest) {
 
       const wss = new WebSocket.Server({ noServer: true });
       wss.handleUpgrade(req, socket, head, (clientWs) => {
-        log('Admin WS connected, proxying to codex app-server');
+        log('Admin WS connected, proxying to codex app-server at ' + APP_SERVER_WS_URL);
         
         const targetWs = new WebSocket(APP_SERVER_WS_URL, {
           headers: {
             'Authorization': `Bearer ${appServerToken}`
-          }
+          },
+          handshakeTimeout: 5000
         });
 
-        const bridge = (src, dst) => {
+        const bridge = (src, dst, label) => {
           src.on('message', (data) => {
             if (dst.readyState === WebSocket.OPEN) {
               dst.send(data);
             }
           });
           src.on('error', (err) => {
-            log(`WS Bridge Error: ${err.message}`, { level: 'error' });
+            log(`${label} WS Bridge Error: ${err.message}`, { level: 'error' });
             dst.close();
           });
-          src.on('close', () => dst.close());
+          src.on('close', () => {
+            log(`${label} WS closed`);
+            dst.close();
+          });
         };
 
         targetWs.on('open', () => {
-          bridge(clientWs, targetWs);
-          bridge(targetWs, clientWs);
+          log('Successfully connected to codex app-server at 9090');
+          bridge(clientWs, targetWs, 'Client->Server');
+          bridge(targetWs, clientWs, 'Server->Client');
         });
 
         targetWs.on('error', (err) => {
-          log(`Failed to connect to app-server WS: ${err.message}`, { level: 'error' });
+          log(`Failed to reach codex app-server (9090): ${err.message}`, { level: 'error' });
+          clientWs.send(JSON.stringify({ 
+            jsonrpc: '2.0', 
+            error: { code: -32000, message: `無法連接到後端 Codex 服務 (9090): ${err.message}` } 
+          }));
           clientWs.close();
         });
       });
