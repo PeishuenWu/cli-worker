@@ -577,7 +577,7 @@ async function renderChatPartial() {
 
     function sendRpc(method, params) {
       const id = ++requestId;
-      ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
+      ws.send(JSON.stringify({ id, method, params }));
       return id;
     }
 

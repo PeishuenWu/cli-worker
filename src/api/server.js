@@ -277,35 +277,60 @@ function startServer(handleChatRequest) {
           handshakeTimeout: 5000
         });
 
-        const bridge = (src, dst, label) => {
-          src.on('message', (data) => {
-            if (dst.readyState === WebSocket.OPEN) {
-              dst.send(data);
-            }
-          });
-          src.on('error', (err) => {
-            log(`${label} WS Bridge Error: ${err.message}`, { level: 'error' });
-            dst.close();
-          });
-          src.on('close', () => {
-            log(`${label} WS closed`);
-            dst.close();
-          });
-        };
+        let targetReady = false;
+        const buffer = [];
+
+        // 1. Handle messages from Browser Client
+        clientWs.on('message', (data) => {
+          if (targetReady && targetWs.readyState === WebSocket.OPEN) {
+            targetWs.send(data);
+          } else {
+            // Buffer messages until backend is ready
+            buffer.push(data);
+          }
+        });
+
+        // 2. Handle messages from Codex Backend
+        targetWs.on('message', (data) => {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(data);
+          }
+        });
 
         targetWs.on('open', () => {
           log('Successfully connected to codex app-server at 9090');
-          bridge(clientWs, targetWs, 'Client->Server');
-          bridge(targetWs, clientWs, 'Server->Client');
+          targetReady = true;
+          // Flush buffer
+          while (buffer.length > 0) {
+            targetWs.send(buffer.shift());
+          }
+        });
+
+        const cleanup = () => {
+          clientWs.close();
+          targetWs.close();
+        };
+
+        targetWs.on('close', () => {
+          log('Backend WS closed');
+          cleanup();
+        });
+        clientWs.on('close', () => {
+          log('Client WS closed');
+          cleanup();
         });
 
         targetWs.on('error', (err) => {
           log(`Failed to reach codex app-server (9090): ${err.message}`, { level: 'error' });
           clientWs.send(JSON.stringify({ 
-            jsonrpc: '2.0', 
             error: { code: -32000, message: `無法連接到後端 Codex 服務 (9090): ${err.message}` } 
           }));
-          clientWs.close();
+          cleanup();
+        });
+        
+        clientWs.on('error', (err) => {
+          log(`Client WS error: ${err.message}`, { level: 'error' });
+          cleanup();
         });
       });
       return;
