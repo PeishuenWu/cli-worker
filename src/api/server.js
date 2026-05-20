@@ -260,7 +260,9 @@ function startServer(handleChatRequest) {
       let appServerToken = '';
       try {
         if (fs.existsSync(APP_SERVER_TOKEN_FILE)) {
-          appServerToken = fs.readFileSync(APP_SERVER_TOKEN_FILE, 'utf8').trim();
+          // Use hex-like sanitization or just replace all whitespace
+          appServerToken = fs.readFileSync(APP_SERVER_TOKEN_FILE, 'utf8').replace(/\s+/g, '');
+          log(`Read app-server token (length: ${appServerToken.length})`);
         }
       } catch (err) {
         log(`Failed to read app-server token: ${err.message}`, { level: 'error' });
@@ -272,7 +274,8 @@ function startServer(handleChatRequest) {
         
         const targetWs = new WebSocket(APP_SERVER_WS_URL, {
           headers: {
-            'Authorization': `Bearer ${appServerToken}`
+            'Authorization': `Bearer ${appServerToken}`,
+            'Origin': '' // CRITICAL: app-server rejects non-empty Origin by default
           },
           handshakeTimeout: 5000
         });
@@ -282,16 +285,19 @@ function startServer(handleChatRequest) {
 
         // 1. Handle messages from Browser Client
         clientWs.on('message', (data) => {
+          const msgStr = data.toString();
+          log(`Client -> Proxy: ${msgStr.slice(0, 100)}${msgStr.length > 100 ? '...' : ''}`);
           if (targetReady && targetWs.readyState === WebSocket.OPEN) {
             targetWs.send(data);
           } else {
-            // Buffer messages until backend is ready
             buffer.push(data);
           }
         });
 
         // 2. Handle messages from Codex Backend
         targetWs.on('message', (data) => {
+          const msgStr = data.toString();
+          log(`Proxy <- Backend: ${msgStr.slice(0, 100)}${msgStr.length > 100 ? '...' : ''}`);
           if (clientWs.readyState === WebSocket.OPEN) {
             clientWs.send(data);
           }
@@ -300,9 +306,11 @@ function startServer(handleChatRequest) {
         targetWs.on('open', () => {
           log('Successfully connected to codex app-server at 9090');
           targetReady = true;
-          // Flush buffer
-          while (buffer.length > 0) {
-            targetWs.send(buffer.shift());
+          if (buffer.length > 0) {
+            log(`Flushing ${buffer.length} messages to backend`);
+            while (buffer.length > 0) {
+              targetWs.send(buffer.shift());
+            }
           }
         });
 

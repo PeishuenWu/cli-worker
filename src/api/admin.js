@@ -554,6 +554,14 @@ async function renderChatPartial() {
       ws.onopen = () => {
         updateStatus('已連線', '#28a745');
         appendMessage('system', 'WebSocket 已開啟，正在發送 initialize 請求...');
+        
+        // Timeout warning
+        const timer = setTimeout(() => {
+          if (!currentThreadId) {
+            appendMessage('system', '警告: 初始化超時，請檢查伺服器日誌。可能是令牌或 Origin 阻擋問題。');
+          }
+        }, 8000);
+
         initId = sendRpc('initialize', {
           clientInfo: { name: 'codex-worker-web', version: '1.0.0' },
           capabilities: { experimentalApi: true }
@@ -584,7 +592,9 @@ async function renderChatPartial() {
     function handleRpc(msg) {
       if (msg.id === initId && msg.result) {
         appendMessage('system', '收到初始化回應，發送 initialized 通知...');
-        ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'initialized', params: {} }));
+        // Send initialized notification (no id, no jsonrpc)
+        ws.send(JSON.stringify({ method: 'initialized', params: {} }));
+        // Now we can start a thread
         sendRpc('thread/start', {});
       } else if (msg.result && msg.result.thread) {
         currentThreadId = msg.result.thread.id;
