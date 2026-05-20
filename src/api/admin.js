@@ -553,21 +553,24 @@ async function renderChatPartial() {
       
       ws.onopen = () => {
         updateStatus('已連線', '#28a745');
-        appendMessage('system', 'WebSocket 已開啟，正在發送 initialize 請求...');
-        
+        appendMessage('system', 'WebSocket 已開啟，等待 200ms 後發送 initialize...');
+
+        // Give proxy/backend a brief moment to stabilize
+        setTimeout(() => {
+          initId = sendRpc('initialize', {
+            clientInfo: { name: 'codex-worker-web', version: '1.0.0' },
+            capabilities: { experimentalApi: true }
+          });
+        }, 200);
+
         // Timeout warning
         const timer = setTimeout(() => {
           if (!currentThreadId) {
-            appendMessage('system', '警告: 初始化超時，請檢查伺服器日誌。可能是令牌或 Origin 阻擋問題。');
+            appendMessage('system', '警告: 初始化超時，請檢查伺服器日誌（docker logs）。');
           }
         }, 8000);
-
-        initId = sendRpc('initialize', {
-          clientInfo: { name: 'codex-worker-web', version: '1.0.0' },
-          capabilities: { experimentalApi: true }
-        });
       };
-      
+
       ws.onclose = (e) => {
         updateStatus('連線中斷', '#dc3545');
         appendMessage('system', \`連線已關閉 (code=\${e.code}, reason=\${e.reason})\`);
@@ -576,27 +579,30 @@ async function renderChatPartial() {
       ws.onerror = (e) => {
         appendMessage('system', 'WebSocket 發生錯誤');
       };
-      
+
       ws.onmessage = (e) => {
+        console.log('RAW MSG:', e.data); // Log to browser console
         const msg = JSON.parse(e.data);
         handleRpc(msg);
       };
-    }
+      }
 
-    function sendRpc(method, params) {
+      function sendRpc(method, params) {
       const id = ++requestId;
-      ws.send(JSON.stringify({ id, method, params }));
+      const payload = { jsonrpc: '2.0', id, method, params };
+      console.log('SEND RPC:', payload);
+      ws.send(JSON.stringify(payload));
       return id;
-    }
+      }
 
-    function handleRpc(msg) {
+      function handleRpc(msg) {
+      // 1. Handle Handshake
       if (msg.id === initId && msg.result) {
         appendMessage('system', '收到初始化回應，發送 initialized 通知...');
-        // Send initialized notification (no id, no jsonrpc)
-        ws.send(JSON.stringify({ method: 'initialized', params: {} }));
-        // Now we can start a thread
+        ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'initialized', params: {} }));
         sendRpc('thread/start', {});
-      } else if (msg.result && msg.result.thread) {
+      } 
+ else if (msg.result && msg.result.thread) {
         currentThreadId = msg.result.thread.id;
         appendMessage('system', \`執行緒已建立: \${currentThreadId}\`);
       } else if (msg.method === 'item/started') {

@@ -272,11 +272,13 @@ function startServer(handleChatRequest) {
       wss.handleUpgrade(req, socket, head, (clientWs) => {
         log('Admin WS connected, proxying to codex app-server at ' + APP_SERVER_WS_URL);
         
+        // Clone headers and remove Origin
+        const headers = {
+          'Authorization': `Bearer ${appServerToken}`
+        };
+        
         const targetWs = new WebSocket(APP_SERVER_WS_URL, {
-          headers: {
-            'Authorization': `Bearer ${appServerToken}`,
-            'Origin': '' // CRITICAL: app-server rejects non-empty Origin by default
-          },
+          headers,
           handshakeTimeout: 5000
         });
 
