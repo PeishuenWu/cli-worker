@@ -20,11 +20,18 @@ if [ "${CHAT_BRIDGE_ENABLE:-false}" = "true" ]; then
     chmod 600 "$APP_SERVER_TOKEN_FILE"
   fi
 
-  # Start codex app-server in the background
-  # We use 127.0.0.1 for security, only accessible via our Node.js proxy
-  runuser -u codex -- codex app-server --listen ws://127.0.0.1:9090 \
-    --ws-auth capability-token --ws-token-file "$APP_SERVER_TOKEN_FILE" \
-    -c sandbox="workspace-write" &
+  # Keep codex app-server under supervision.
+  # If it crashes, restart it to avoid container "healthy" but WS backend down.
+  runuser -u codex -- bash -lc '
+    while true; do
+      codex app-server --listen ws://127.0.0.1:9090 \
+        --ws-auth capability-token --ws-token-file "'"$APP_SERVER_TOKEN_FILE"'" \
+        -c sandbox="workspace-write"
+      rc=$?
+      echo "[entrypoint] codex app-server exited rc=${rc}, restarting in 2s..." >&2
+      sleep 2
+    done
+  ' &
 
   NP=$(npm root -g)
   runuser -u codex -- env NODE_PATH="$NP" node /home/codex/chat_bridge.js &
