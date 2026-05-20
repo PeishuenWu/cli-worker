@@ -580,10 +580,15 @@ async function renderChatPartial() {
         appendMessage('system', 'WebSocket 發生錯誤');
       };
 
-      ws.onmessage = (e) => {
+      ws.onmessage = async (e) => {
         console.log('RAW MSG:', e.data); // Log to browser console
-        const msg = JSON.parse(e.data);
-        handleRpc(msg);
+        try {
+          const raw = (typeof e.data === 'string') ? e.data : await e.data.text();
+          const msg = JSON.parse(raw);
+          handleRpc(msg);
+        } catch (err) {
+          appendMessage('system', 'WS 訊息解析失敗: ' + (err && err.message ? err.message : String(err)));
+        }
       };
       }
 

@@ -286,22 +286,22 @@ function startServer(handleChatRequest) {
         const buffer = [];
 
         // 1. Handle messages from Browser Client
-        clientWs.on('message', (data) => {
+        clientWs.on('message', (data, isBinary) => {
           const msgStr = data.toString();
           log(`Client -> Proxy: ${msgStr.slice(0, 100)}${msgStr.length > 100 ? '...' : ''}`);
           if (targetReady && targetWs.readyState === WebSocket.OPEN) {
-            targetWs.send(data);
+            targetWs.send(data, { binary: Boolean(isBinary) });
           } else {
-            buffer.push(data);
+            buffer.push({ data, isBinary: Boolean(isBinary) });
           }
         });
 
         // 2. Handle messages from Codex Backend
-        targetWs.on('message', (data) => {
+        targetWs.on('message', (data, isBinary) => {
           const msgStr = data.toString();
           log(`Proxy <- Backend: ${msgStr.slice(0, 100)}${msgStr.length > 100 ? '...' : ''}`);
           if (clientWs.readyState === WebSocket.OPEN) {
-            clientWs.send(data);
+            clientWs.send(data, { binary: Boolean(isBinary) });
           }
         });
 
@@ -311,7 +311,8 @@ function startServer(handleChatRequest) {
           if (buffer.length > 0) {
             log(`Flushing ${buffer.length} messages to backend`);
             while (buffer.length > 0) {
-              targetWs.send(buffer.shift());
+              const item = buffer.shift();
+              targetWs.send(item.data, { binary: item.isBinary });
             }
           }
         });
