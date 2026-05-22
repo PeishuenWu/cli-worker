@@ -111,16 +111,17 @@ async function handleLoginOptions(req, res) {
     userVerification: 'preferred',
   });
 
+  // SimpleWebAuthn's options.challenge is already a Base64URL string
   await authStore.saveChallenge(options.challenge, userID, Date.now() + 60000);
   sendJson(res, 200, options);
 }
 
 async function handleLoginVerify(req, res, body) {
-  const expectedChallenge = await authStore.getChallenge(body.challenge);
+  const expectedChallenge = await authStore.getChallenge(body.response.challenge);
   if (!expectedChallenge) {
     return sendJson(res, 400, { verified: false, error: 'Challenge not found or expired' });
   }
-  await authStore.deleteChallenge(body.challenge);
+  await authStore.deleteChallenge(body.response.challenge);
 
   const credential = await authStore.getCredential(body.id);
   if (!credential) {
@@ -163,7 +164,7 @@ async function handleRegisterOptions(req, res) {
   const options = await generateRegistrationOptions({
     rpName: RP_NAME,
     rpID: RP_ID,
-    userID,
+    userID: Buffer.from(userID), // Use Buffer for userID
     userName: 'admin',
     attestationType: 'none',
     excludeCredentials: (await authStore.listCredentials()).map(cred => ({
@@ -181,11 +182,11 @@ async function handleRegisterOptions(req, res) {
 }
 
 async function handleRegisterVerify(req, res, body) {
-  const expectedChallenge = await authStore.getChallenge(body.challenge);
+  const expectedChallenge = await authStore.getChallenge(body.response.challenge);
   if (!expectedChallenge) {
     return sendJson(res, 400, { verified: false, error: 'Challenge not found or expired' });
   }
-  await authStore.deleteChallenge(body.challenge);
+  await authStore.deleteChallenge(body.response.challenge);
 
   try {
     const verification = await verifyRegistrationResponse({
