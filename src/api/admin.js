@@ -7,8 +7,9 @@ const {
   MEMORY_PROJECT, ADMIN_UI_MEMORY_LIMIT, ADMIN_UI_SCHEDULE_LIMIT 
 } = require('../config');
 const { metrics } = require('../logger');
-const { schedulerStore, memoryStore } = require('../stores');
+const { schedulerStore, memoryStore, authStore } = require('../stores');
 const { parseCookies, escapeHtml, shortText, fmtTs } = require('../utils');
+const { isSessionAuthorized } = require('./auth');
 
 function safeJsonParse(s, fallback) {
   try {
@@ -31,10 +32,11 @@ function getAdminTokenFromRequest(req, urlObj) {
   return String(cookies.admin_token || '').trim();
 }
 
-function isAdminAuthorized(req, urlObj) {
+async function isAdminAuthorized(req, urlObj) {
   if (!ADMIN_AUTH_TOKEN) return true;
   const token = getAdminTokenFromRequest(req, urlObj);
-  return token && token === ADMIN_AUTH_TOKEN;
+  if (token && token === ADMIN_AUTH_TOKEN) return true;
+  return await isSessionAuthorized(req);
 }
 
 function setAdminAuthCookieIfNeeded(req, res, urlObj) {
@@ -166,6 +168,14 @@ function renderAdminPage() {
             hx-target="#tab-content"
             onclick="switchTab(this)">
             對話測試 (Chat)
+          </button>
+        </li>
+        <li>
+          <button 
+            hx-get="${ADMIN_UI_PATH}/partials/security" 
+            hx-target="#tab-content"
+            onclick="switchTab(this)">
+            安全性 (FIDO)
           </button>
         </li>
       </ul>
@@ -676,6 +686,91 @@ async function renderChatPartial() {
 `;
 }
 
+async function renderSecurityPartial() {
+  const credentials = await authStore.listCredentials();
+  
+  const rows = credentials.map(cred => `
+    <tr>
+      <td><code>${escapeHtml(cred.id.slice(0, 16))}...</code></td>
+      <td>${escapeHtml(fmtTs(cred.created_at))}</td>
+      <td>${cred.counter}</td>
+      <td>
+        <button class="outline contrast" 
+          hx-delete="${ADMIN_UI_PATH}/security/keys/${encodeURIComponent(cred.id)}"
+          hx-target="closest tr"
+          hx-swap="outerHTML"
+          hx-confirm="確定要刪除此安全密鑰嗎？">
+          刪除
+        </button>
+      </td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="card">
+      <div class="card-header">
+        <h2>安全性與 FIDO 認證</h2>
+        <button hx-on:click="registerNewKey()" id="reg-btn">註冊新密鑰</button>
+      </div>
+      <p class="muted">在此管理用於登入的管理員 FIDO 安全密鑰 (USB 或 NFC)。</p>
+      
+      <table role="grid">
+        <thead>
+          <tr>
+            <th>密鑰 ID</th>
+            <th>註冊時間</th>
+            <th>計數器</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows || '<tr><td colspan="4" style="text-align:center">尚未註冊任何密鑰</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+
+    <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+    <script>
+      async function registerNewKey() {
+        const btn = document.getElementById('reg-btn');
+        btn.ariaBusy = 'true';
+        btn.disabled = true;
+
+        try {
+          const optionsRes = await fetch('${ADMIN_UI_PATH}/webauthn/register-options');
+          const options = await optionsRes.json();
+          
+          if (options.error) throw new Error(options.error);
+
+          const { startRegistration } = SimpleWebAuthnBrowser;
+          const regResp = await startRegistration(options);
+
+          const verifyRes = await fetch('${ADMIN_UI_PATH}/webauthn/register-verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(regResp),
+          });
+
+          const verification = await verifyRes.json();
+
+          if (verification.verified) {
+            alert('密鑰註冊成功！');
+            htmx.trigger('#tab-content', 'load'); // Reload the partial
+          } else {
+            throw new Error(verification.error || '驗證失敗');
+          }
+        } catch (err) {
+          console.error(err);
+          alert('註冊失敗: ' + err.message);
+        } finally {
+          btn.ariaBusy = 'false';
+          btn.disabled = false;
+        }
+      }
+    </script>
+  `;
+}
+
 module.exports = {
   isAdminAuthorized,
   setAdminAuthCookieIfNeeded,
@@ -687,4 +782,5 @@ module.exports = {
   renderContextsPartial,
   renderEventsPartial,
   renderChatPartial,
+  renderSecurityPartial,
 };

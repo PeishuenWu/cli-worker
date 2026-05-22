@@ -12,8 +12,12 @@ const { log, getLogContext } = require('../logger');
 const { 
   isAdminAuthorized, setAdminAuthCookieIfNeeded, serveStaticFile, 
   renderAdminPage, renderDashboardPartial, renderSchedulesPartial, renderMemoriesPartial,
-  renderContextsPartial, renderEventsPartial, renderChatPartial
+  renderContextsPartial, renderEventsPartial, renderChatPartial, renderSecurityPartial
 } = require('./admin');
+const {
+  renderLoginPage, handleLoginOptions, handleLoginVerify,
+  handleRegisterOptions, handleRegisterVerify
+} = require('./auth');
 
 function generateRequestId() {
   return Math.random().toString(36).substring(2, 9) + Date.now().toString(36).substring(4);
@@ -113,12 +117,56 @@ function startServer(handleChatRequest) {
     }
 
     if (ADMIN_UI_ENABLE === 'true' && url.pathname.startsWith(ADMIN_UI_PATH)) {
-      if (!isAdminAuthorized(req, url)) {
-        res.writeHead(401, { 'WWW-Authenticate': 'Bearer realm="Admin UI"' });
-        res.end('Unauthorized');
+      // 1. Unauthenticated routes
+      if (url.pathname === `${ADMIN_UI_PATH}/login`) {
+        sendHtml(res, 200, renderLoginPage());
+        return;
+      }
+      if (url.pathname === `${ADMIN_UI_PATH}/webauthn/login-options`) {
+        await handleLoginOptions(req, res);
+        return;
+      }
+      if (url.pathname === `${ADMIN_UI_PATH}/webauthn/login-verify` && req.method === 'POST') {
+        const body = JSON.parse(await readBody(req));
+        await handleLoginVerify(req, res, body);
+        return;
+      }
+
+      // 2. Auth Check
+      if (!await isAdminAuthorized(req, url)) {
+        res.writeHead(302, { 'Location': `${ADMIN_UI_PATH}/login` });
+        res.end();
         return;
       }
       setAdminAuthCookieIfNeeded(req, res, url);
+
+      // 3. Authenticated routes (including registration and partials)
+      if (url.pathname === `${ADMIN_UI_PATH}/webauthn/register-options`) {
+        await handleRegisterOptions(req, res);
+        return;
+      }
+      if (url.pathname === `${ADMIN_UI_PATH}/webauthn/register-verify` && req.method === 'POST') {
+        const body = JSON.parse(await readBody(req));
+        await handleRegisterVerify(req, res, body);
+        return;
+      }
+
+      if (url.pathname === `${ADMIN_UI_PATH}/partials/security`) {
+        sendHtml(res, 200, await renderSecurityPartial());
+        return;
+      }
+
+      if (req.method === 'DELETE') {
+        const keyDeleteMatch = url.pathname.match(new RegExp(`^${ADMIN_UI_PATH}/security/keys/(.+)$`));
+        if (keyDeleteMatch) {
+          const keyId = decodeURIComponent(keyDeleteMatch[1]);
+          const { authStore } = require('../stores');
+          await authStore.deleteCredential(keyId);
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+      }
 
       // SSE Endpoint for real-time events
       if (url.pathname === `${ADMIN_UI_PATH}/events`) {
@@ -246,15 +294,15 @@ function startServer(handleChatRequest) {
   });
 
   // WebSocket Proxy for codex app-server
-  server.on('upgrade', (req, socket, head) => {
+  server.on('upgrade', async (req, socket, head) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
-    
     if (ADMIN_UI_ENABLE === 'true' && url.pathname === `${ADMIN_UI_PATH}/ws`) {
-      if (!isAdminAuthorized(req, url)) {
+      if (!await isAdminAuthorized(req, url)) {
         log('Unauthorized WS upgrade attempt', { level: 'warn' });
         socket.destroy();
         return;
       }
+
 
       // Read internal app-server token
       let appServerToken = '';

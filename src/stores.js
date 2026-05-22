@@ -3,13 +3,15 @@
 const { MemoryStore, buildMemoryContext, buildMemoryEntry } = require('../memory_store');
 const { SchedulerStore } = require('../scheduler_store');
 const { ChatContextStore } = require('../chat_context_store');
+const { AuthStore } = require('./stores/auth_store');
 const {
   MEMORY_ENABLE, MEMORY_BACKEND, MEMORY_PROJECT, MEMORY_TOP_K, 
   MEMORY_SCORE_THRESHOLD, MEMORY_SHORT_TTL_DAYS, QDRANT_URL, 
   QDRANT_COLLECTION, OPENAI_API_KEY, OPENAI_BASE_URL, EMBEDDING_MODEL, 
   EMBEDDING_DIM, MEMORY_FALLBACK_FILE,
   SCHEDULER_ENABLE, SCHEDULER_DB_PATH,
-  CHAT_CONTEXT_ENABLE, CHAT_CONTEXT_DB_PATH, CHAT_CONTEXT_MAX_MESSAGES
+  CHAT_CONTEXT_ENABLE, CHAT_CONTEXT_DB_PATH, CHAT_CONTEXT_MAX_MESSAGES,
+  AUTH_DB_PATH
 } = require('./config');
 
 const memoryStore = new MemoryStore({
@@ -39,10 +41,15 @@ const chatContextStore = new ChatContextStore({
   maxMessagesPerChannel: CHAT_CONTEXT_MAX_MESSAGES,
 });
 
+const authStore = new AuthStore({
+  dbPath: AUTH_DB_PATH,
+});
+
 module.exports = {
   memoryStore,
   schedulerStore,
   chatContextStore,
+  authStore,
   buildMemoryContext,
   buildMemoryEntry,
 };

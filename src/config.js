@@ -47,6 +47,7 @@ const TASK_QUEUE_MAX = Math.max(10, Math.min(Number(process.env.TASK_QUEUE_MAX |
 
 const SCHEDULER_ENABLE = String(process.env.SCHEDULER_ENABLE || 'false');
 const SCHEDULER_DB_PATH = process.env.SCHEDULER_DB_PATH || '/home/codex/.codex/scheduler/jobs.sqlite';
+const AUTH_DB_PATH = process.env.AUTH_DB_PATH || '/home/codex/.codex/auth/fido.sqlite';
 const SCHEDULER_TICK_SECONDS = Number(process.env.SCHEDULER_TICK_SECONDS || 30);
 const SCHEDULER_CLAIM_LIMIT = Number(process.env.SCHEDULER_CLAIM_LIMIT || 3);
 const SYSTEM_TIMEZONE = process.env.TZ || 'Asia/Taipei';
@@ -66,6 +67,8 @@ const ADMIN_UI_PATH = process.env.ADMIN_UI_PATH || '/admin';
 const ADMIN_UI_MEMORY_LIMIT = Number(process.env.ADMIN_UI_MEMORY_LIMIT || 50);
 const ADMIN_UI_SCHEDULE_LIMIT = Number(process.env.ADMIN_UI_SCHEDULE_LIMIT || 100);
 const ADMIN_AUTH_TOKEN = (process.env.ADMIN_AUTH_TOKEN || '').trim();
+const ADMIN_UI_RP_ID = process.env.ADMIN_UI_RP_ID || 'localhost';
+const ADMIN_UI_ORIGIN = process.env.ADMIN_UI_ORIGIN || `http://${ADMIN_UI_RP_ID}:8090`;
 
 const APP_SERVER_TOKEN_FILE = process.env.APP_SERVER_TOKEN_FILE || '/home/codex/.codex/app-server-token';
 const APP_SERVER_WS_URL = process.env.APP_SERVER_WS_URL || 'ws://127.0.0.1:9090';
@@ -125,6 +128,7 @@ module.exports = {
   TASK_QUEUE_MAX,
   SCHEDULER_ENABLE,
   SCHEDULER_DB_PATH,
+  AUTH_DB_PATH,
   SCHEDULER_TICK_SECONDS,
   SCHEDULER_CLAIM_LIMIT,
   SYSTEM_TIMEZONE,
@@ -143,6 +147,8 @@ module.exports = {
   ADMIN_UI_MEMORY_LIMIT,
   ADMIN_UI_SCHEDULE_LIMIT,
   ADMIN_AUTH_TOKEN,
+  ADMIN_UI_RP_ID,
+  ADMIN_UI_ORIGIN,
   APP_SERVER_TOKEN_FILE,
   APP_SERVER_WS_URL,
   DEFAULT_CHAT_ID,

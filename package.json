@@ -1,0 +1,13 @@
+{
+  "name": "codex-worker",
+  "version": "1.0.0",
+  "description": "Codex Worker with Admin UI",
+  "main": "src/api/server.js",
+  "dependencies": {
+    "@simplewebauthn/server": "^9.0.3",
+    "ws": "^8.17.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

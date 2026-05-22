@@ -8,7 +8,7 @@ const {
   allowedUsersSet, allowedChannelsSet, adminUsersSet
 } = require('./src/config');
 const { log } = require('./src/logger');
-const { chatContextStore, memoryStore, schedulerStore } = require('./src/stores');
+const { chatContextStore, memoryStore, schedulerStore, authStore } = require('./src/stores');
 const { runSchedulerTick, runSchedulerCleanup } = require('./src/services/scheduler');
 const { handleChatRequest } = require('./src/api/chat');
 const { startServer } = require('./src/api/server');
@@ -31,6 +31,12 @@ async function main() {
 
   await memoryStore.init(log).catch((err) => {
     log('memory init fatal:', err.message);
+  });
+
+  await authStore.init().then(() => {
+    log('auth store initialized');
+  }).catch((err) => {
+    log('auth store init fatal:', err.message);
   });
 
   await schedulerStore.init().then(() => {
