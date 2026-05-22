@@ -111,7 +111,11 @@ async function handleLoginOptions(req, res) {
     userVerification: 'preferred',
   });
 
-  // SimpleWebAuthn's options.challenge is already a Base64URL string
+  // Ensure challenge is a Base64URL string (handling Uint8Array if necessary)
+  if (options.challenge && typeof options.challenge !== 'string') {
+    options.challenge = Buffer.from(options.challenge).toString('base64url');
+  }
+
   await authStore.saveChallenge(options.challenge, userID, Date.now() + 60000);
   sendJson(res, 200, options);
 }
@@ -176,6 +180,14 @@ async function handleRegisterOptions(req, res) {
       userVerification: 'preferred',
     },
   });
+
+  // Ensure binary fields are Base64URL strings for the browser
+  if (options.challenge && typeof options.challenge !== 'string') {
+    options.challenge = Buffer.from(options.challenge).toString('base64url');
+  }
+  if (options.user && options.user.id && typeof options.user.id !== 'string') {
+    options.user.id = Buffer.from(options.user.id).toString('base64url');
+  }
 
   await authStore.saveChallenge(options.challenge, userID, Date.now() + 60000);
   sendJson(res, 200, options);
