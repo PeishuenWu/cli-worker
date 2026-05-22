@@ -744,11 +744,14 @@ async function renderSecurityPartial() {
 
           const { startRegistration } = SimpleWebAuthnBrowser;
           const regResp = await startRegistration(options);
+          
+          // Include challenge in the request so the server can look it up
+          const verifyBody = { ...regResp, challenge: options.challenge };
 
           const verifyRes = await fetch('${ADMIN_UI_PATH}/webauthn/register-verify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(regResp),
+            body: JSON.stringify(verifyBody),
           });
 
           const verification = await verifyRes.json();

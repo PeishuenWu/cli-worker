@@ -72,10 +72,13 @@ function renderLoginPage() {
 
         const authResp = await startAuthentication(options);
 
+        // Include challenge in the request
+        const verifyBody = { ...authResp, challenge: options.challenge };
+
         const verifyRes = await fetch('${ADMIN_UI_PATH}/webauthn/login-verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(authResp),
+          body: JSON.stringify(verifyBody),
         });
 
         const verification = await verifyRes.json();
@@ -121,11 +124,11 @@ async function handleLoginOptions(req, res) {
 }
 
 async function handleLoginVerify(req, res, body) {
-  const expectedChallenge = await authStore.getChallenge(body.response.challenge);
+  const expectedChallenge = await authStore.getChallenge(body.challenge);
   if (!expectedChallenge) {
     return sendJson(res, 400, { verified: false, error: 'Challenge not found or expired' });
   }
-  await authStore.deleteChallenge(body.response.challenge);
+  await authStore.deleteChallenge(body.challenge);
 
   const credential = await authStore.getCredential(body.id);
   if (!credential) {
@@ -194,11 +197,11 @@ async function handleRegisterOptions(req, res) {
 }
 
 async function handleRegisterVerify(req, res, body) {
-  const expectedChallenge = await authStore.getChallenge(body.response.challenge);
+  const expectedChallenge = await authStore.getChallenge(body.challenge);
   if (!expectedChallenge) {
     return sendJson(res, 400, { verified: false, error: 'Challenge not found or expired' });
   }
-  await authStore.deleteChallenge(body.response.challenge);
+  await authStore.deleteChallenge(body.challenge);
 
   try {
     const verification = await verifyRegistrationResponse({
