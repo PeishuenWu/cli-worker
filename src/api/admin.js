@@ -761,7 +761,11 @@ async function renderSecurityPartial() {
           }
         } catch (err) {
           console.error(err);
-          alert('註冊失敗: ' + err.message);
+          let msg = err.message;
+          if (err.name === 'NotAllowedError') {
+            msg = '操作被拒絕。請確保：\\n1. 您正在使用 HTTPS 訪問 (或是 localhost)\\n2. 網址域名與系統設定的 RP_ID 一致\\n3. 您沒有取消認證視窗';
+          }
+          alert('註冊失敗: ' + msg);
         } finally {
           btn.ariaBusy = 'false';
           btn.disabled = false;
