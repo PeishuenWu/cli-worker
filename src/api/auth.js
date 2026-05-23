@@ -212,6 +212,7 @@ async function handleRegisterVerify(req, res, body) {
       expectedChallenge: expectedChallenge.challenge,
       expectedOrigin: ORIGIN,
       expectedRPID: RP_ID,
+      requireUserVerification: false,
     });
 
     if (verification.verified) {
