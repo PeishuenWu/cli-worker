@@ -181,8 +181,8 @@ async function handleRegisterOptions(req, res) {
       type: 'public-key',
     })),
     authenticatorSelection: {
-      authenticatorAttachment: 'cross-platform',
-      residentKey: 'discouraged',
+      residentKey: 'preferred',
+      requireResidentKey: false,
       userVerification: 'discouraged',
     },
   });
