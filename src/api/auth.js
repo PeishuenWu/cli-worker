@@ -172,14 +172,17 @@ async function handleRegisterOptions(req, res) {
   const options = await generateRegistrationOptions({
     rpName: RP_NAME,
     rpID: RP_ID,
-    userID: Buffer.from(userID), // Use Buffer for userID
+    userID: Buffer.from(userID), 
     userName: 'admin',
+    userDisplayName: 'System Admin',
     attestationType: 'none',
     excludeCredentials: (await authStore.listCredentials()).map(cred => ({
       id: cred.id,
       type: 'public-key',
     })),
     authenticatorSelection: {
+      authenticatorAttachment: 'cross-platform',
+      residentKey: 'discouraged',
       userVerification: 'discouraged',
     },
   });
