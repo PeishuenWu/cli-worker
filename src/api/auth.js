@@ -16,6 +16,15 @@ const { escapeHtml } = require('../utils');
 
 const RP_NAME = 'Codex Worker Admin';
 
+function toBase64Url(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (Buffer.isBuffer(value) || value instanceof Uint8Array) {
+    return Buffer.from(value).toString('base64url');
+  }
+  return '';
+}
+
 function sendJson(res, status, data) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
@@ -104,13 +113,20 @@ function renderLoginPage() {
 
 async function handleLoginOptions(req, res) {
   const userID = 'admin'; // Single admin role
+  const credentials = await authStore.listCredentials();
+  const allowCredentials = credentials
+    .map((cred) => ({
+      id: toBase64Url(cred.id),
+      type: 'public-key',
+      transports: Array.isArray(cred.transports)
+        ? cred.transports
+        : JSON.parse(cred.transports || '[]'),
+    }))
+    .filter((cred) => cred.id);
+
   const options = await generateAuthenticationOptions({
     rpID: RP_ID,
-    allowCredentials: (await authStore.listCredentials()).map(cred => ({
-      id: cred.id,
-      type: 'public-key',
-      transports: JSON.parse(cred.transports || '[]'),
-    })),
+    ...(allowCredentials.length > 0 ? { allowCredentials } : {}),
     userVerification: 'preferred',
   });
 
@@ -218,9 +234,13 @@ async function handleRegisterVerify(req, res, body) {
     if (verification.verified) {
       const { registrationInfo } = verification;
       const { credentialPublicKey, credentialID, counter } = registrationInfo;
+      const encodedCredentialID = toBase64Url(credentialID);
+      if (!encodedCredentialID) {
+        return sendJson(res, 400, { verified: false, error: 'Invalid credential ID from authenticator' });
+      }
 
       await authStore.saveCredential({
-        id: credentialID,
+        id: encodedCredentialID,
         publicKey: Buffer.from(credentialPublicKey).toString('base64url'),
         counter,
         transports: body.response.transports,
