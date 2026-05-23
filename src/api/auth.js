@@ -181,7 +181,7 @@ async function handleRegisterOptions(req, res) {
       type: 'public-key',
     })),
     authenticatorSelection: {
-      residentKey: 'preferred',
+      residentKey: 'discouraged',
       requireResidentKey: false,
       userVerification: 'discouraged',
     },
