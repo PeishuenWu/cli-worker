@@ -111,7 +111,7 @@ async function handleLoginOptions(req, res) {
       type: 'public-key',
       transports: JSON.parse(cred.transports || '[]'),
     })),
-    userVerification: 'discouraged',
+    userVerification: 'preferred',
   });
 
   // Ensure challenge is a Base64URL string (handling Uint8Array if necessary)
@@ -146,6 +146,7 @@ async function handleLoginVerify(req, res, body) {
         credentialPublicKey: Buffer.from(credential.publicKey, 'base64url'),
         counter: credential.counter,
       },
+      requireUserVerification: false,
     });
 
     if (verification.verified) {
