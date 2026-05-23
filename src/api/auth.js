@@ -126,9 +126,14 @@ async function handleLoginOptions(req, res) {
 
   const options = await generateAuthenticationOptions({
     rpID: RP_ID,
-    ...(allowCredentials.length > 0 ? { allowCredentials } : {}),
     userVerification: 'preferred',
   });
+
+  // Keep credential IDs in canonical base64url form for browser WebAuthn APIs.
+  // Some server-library versions may normalize/transform ids unexpectedly.
+  if (allowCredentials.length > 0) {
+    options.allowCredentials = allowCredentials;
+  }
 
   // Ensure challenge is a Base64URL string (handling Uint8Array if necessary)
   if (options.challenge && typeof options.challenge !== 'string') {
