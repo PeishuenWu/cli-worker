@@ -111,7 +111,7 @@ async function handleLoginOptions(req, res) {
       type: 'public-key',
       transports: JSON.parse(cred.transports || '[]'),
     })),
-    userVerification: 'preferred',
+    userVerification: 'discouraged',
   });
 
   // Ensure challenge is a Base64URL string (handling Uint8Array if necessary)
@@ -180,7 +180,7 @@ async function handleRegisterOptions(req, res) {
     })),
     authenticatorSelection: {
       residentKey: 'preferred',
-      userVerification: 'preferred',
+      userVerification: 'discouraged',
     },
   });
 
