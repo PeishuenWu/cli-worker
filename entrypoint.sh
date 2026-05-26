@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-mkdir -p /home/codex/.ssh /home/codex/workspace /var/run/sshd
-chown -R codex:codex /home/codex
+CODEX_WORKDIR="${CODEX_WORKDIR:-/home/codex/workspace}"
+
+mkdir -p /home/codex/.ssh "$CODEX_WORKDIR" /home/codex/.codex /var/run/sshd
+chown codex:codex /home/codex
+chown -R codex:codex /home/codex/.ssh "$CODEX_WORKDIR" /home/codex/.codex
 chmod 700 /home/codex/.ssh
 
 if [ -f /home/codex/.ssh/authorized_keys ]; then
@@ -22,7 +25,8 @@ if [ "${CHAT_BRIDGE_ENABLE:-false}" = "true" ]; then
 
   # Keep codex app-server under supervision.
   # If it crashes, restart it to avoid container "healthy" but WS backend down.
-  runuser -u codex -- bash -lc '
+  runuser -u codex -- env CODEX_WORKDIR="$CODEX_WORKDIR" bash -lc '
+    cd "$CODEX_WORKDIR"
     while true; do
       codex app-server --listen ws://127.0.0.1:9090 \
         --ws-auth capability-token --ws-token-file "'"$APP_SERVER_TOKEN_FILE"'" \
@@ -34,7 +38,7 @@ if [ "${CHAT_BRIDGE_ENABLE:-false}" = "true" ]; then
   ' &
 
   NP=$(npm root -g)
-  runuser -u codex -- env NODE_PATH="$NP" node /home/codex/chat_bridge.js &
+  runuser -u codex -- env NODE_PATH="$NP" CODEX_WORKDIR="$CODEX_WORKDIR" bash -lc 'cd "$CODEX_WORKDIR" && exec node /home/codex/chat_bridge.js' &
 fi
 
 # Start GgySSH Web Terminal
