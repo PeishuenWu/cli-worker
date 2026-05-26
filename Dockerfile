@@ -1,3 +1,15 @@
+FROM golang:1.25-bookworm AS ggyssh-builder
+
+ARG GGYSSH_REPO=https://github.com/PeishuenWu/ggyssh.git
+ARG GGYSSH_REF=main
+
+RUN git clone "${GGYSSH_REPO}" /src/ggyssh \
+    && cd /src/ggyssh \
+    && git checkout "${GGYSSH_REF}" \
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ggyssh . \
+    && mkdir -p /out/static \
+    && cp -a static/. /out/static/
+
 FROM debian:12
 
 ARG NODE_MAJOR=22
@@ -60,7 +72,9 @@ COPY chat_bridge.js /home/codex/chat_bridge.js
 COPY memory_store.js /home/codex/memory_store.js
 COPY scheduler_store.js /home/codex/scheduler_store.js
 COPY chat_context_store.js /home/codex/chat_context_store.js
-COPY ggyssh/ /home/codex/ggyssh/
+COPY --from=ggyssh-builder /out/ggyssh /home/codex/ggyssh/ggyssh
+COPY --from=ggyssh-builder /out/static/ /home/codex/ggyssh/static/
+COPY ggyssh/config.json /home/codex/ggyssh/config.json
 
 RUN cd /home/codex && npm install --omit=dev
 

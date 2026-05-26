@@ -1,0 +1,9 @@
+.git
+codex
+ssh
+workspace
+node_modules
+npm-debug.log
+*.tmp
+ggyssh/ggyssh
+ggyssh/static

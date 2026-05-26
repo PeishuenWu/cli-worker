@@ -17,6 +17,8 @@ services:
         CODEX_NPM_VERSION: "latest"
         HOST_UID: "${HOST_UID:-1000}"
         HOST_GID: "${HOST_GID:-1000}"
+        GGYSSH_REPO: "${GGYSSH_REPO:-https://github.com/PeishuenWu/ggyssh.git}"
+        GGYSSH_REF: "${GGYSSH_REF:-main}"
     container_name: codex-worker
     ports:
       - "2222:22"
@@ -30,6 +32,7 @@ services:
       - ./workspace:/home/codex/workspace
       - ./ssh:/home/codex/.ssh
       - ./codex:/home/codex/.codex
+      - ./ggyssh/config.json:/home/codex/ggyssh/config.json:ro
     environment:
       CHAT_BRIDGE_ENABLE: "true"
       CHAT_BRIDGE_PORT: "8090"
