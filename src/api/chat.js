@@ -10,8 +10,86 @@ const { getMessageText, parseScheduleCommand, truncateReply } = require('../util
 const { handleScheduleCommand } = require('../services/scheduler');
 const { runPromptWithMemory } = require('../services/chat');
 const { postToIncomingWebhook } = require('../services/webhook');
+const { classifyScheduleIntent, extractScheduleCommand } = require('../services/intent_classifier');
 const { enqueueTask } = require('../queue');
 const state = require('../state');
+
+function stripJsonFence(text) {
+  return String(text || '').trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
+}
+
+function normalizeInteractiveButtons(rawButtons) {
+  if (!Array.isArray(rawButtons) || rawButtons.length === 0) return null;
+  const buttons = rawButtons
+    .map((button, index) => {
+      if (!button || typeof button !== 'object') return null;
+      const name = String(button.name || button.action_name || `btn_${index + 1}`).trim();
+      const text = String(button.text || button.display_name || button.label || '').trim();
+      const value = String(button.value || name).trim();
+      const style = String(button.style || 'default').trim().toLowerCase();
+      if (!name || !text || !value) return null;
+      if (!['default', 'green', 'red'].includes(style)) return null;
+      return { name, text, value, style };
+    })
+    .filter(Boolean)
+    .slice(0, 5);
+  return buttons.length > 0 ? buttons : null;
+}
+
+function parseInteractiveReply(output) {
+  const raw = stripJsonFence(output);
+  if (!raw.startsWith('{')) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    const replyMode = String(parsed.reply_mode || parsed.mode || '').trim().toLowerCase();
+    if (!['buttons', 'interactive_reply'].includes(replyMode)) return null;
+
+    const text = String(parsed.text || parsed.message || '').trim();
+    const buttons = normalizeInteractiveButtons(parsed.buttons);
+    if (!text || !buttons) return null;
+
+    return {
+      text,
+      attachments: [{
+        callback_id: `notify_${Date.now()}`,
+        actions: buttons.map((button) => ({
+          type: 'button',
+          name: button.name,
+          text: button.text,
+          value: button.value,
+          style: button.style,
+        })),
+      }],
+    };
+  } catch (_err) {
+    return null;
+  }
+}
+
+function formatInteractiveFallback(interactiveReply) {
+  const lines = [interactiveReply.text, ''];
+  for (const action of interactiveReply.attachments[0].actions) {
+    lines.push(`- ${action.text} (${action.value})`);
+  }
+  return lines.join('\n');
+}
+
+async function generateChatReply(messageText, data, options = {}) {
+  const scheduleCmd = parseScheduleCommand(messageText);
+  if (scheduleCmd) {
+    return handleScheduleCommand(scheduleCmd, data);
+  }
+
+  const semanticIntent = await classifyScheduleIntent(messageText, data);
+  const semanticScheduleCmd = await extractScheduleCommand(messageText, data, semanticIntent);
+  if (semanticScheduleCmd) {
+    log(`semantic schedule intent matched: action=${semanticScheduleCmd.action}, confidence=${semanticIntent.confidence}`);
+    return handleScheduleCommand(semanticScheduleCmd, data);
+  }
+
+  return runPromptWithMemory(messageText, data, 'synology_chat', options);
+}
 
 async function handleChatRequest(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -77,23 +155,12 @@ async function handleChatRequest(req, res) {
     return true;
   }
 
-  const scheduleCmd = parseScheduleCommand(messageText);
-  if (scheduleCmd) {
-    try {
-      const text = await handleScheduleCommand(scheduleCmd, data);
-      sendJson(res, 200, { text });
-    } catch (err) {
-      sendJson(res, 500, { text: `排程處理失敗: ${truncateReply(err.message || 'unknown_error')}` });
-    }
-    return true;
-  }
-
   if (INCOMING_URL) {
     sendJson(res, 200, { text: '已收到，Codex 產生回覆中。' });
     const enqueued = enqueueTask(async () => {
       try {
         log('processing async request from', data.username || data.user_name || 'unknown');
-        const output = await runPromptWithMemory(messageText, data, 'synology_chat', {
+        const output = await generateChatReply(messageText, data, {
           onProgress: (elapsedMs) => {
             const seconds = Math.floor(elapsedMs / 1000);
             postToIncomingWebhook(`Codex 正在處理您的請求，請稍候... (已執行 ${seconds} 秒)`, data).catch((e) => {
@@ -101,6 +168,15 @@ async function handleChatRequest(req, res) {
             });
           }
         });
+        const interactiveReply = parseInteractiveReply(output);
+        if (interactiveReply) {
+          log(`Async task generated interactive reply: "${interactiveReply.text.slice(0, 50)}..."`);
+          await postToIncomingWebhook(interactiveReply.text, data, {
+            attachments: interactiveReply.attachments,
+          });
+          return;
+        }
+
         const reply = truncateReply(output);
         log(`Async task generated reply: "${reply.slice(0, 50)}..."`);
         await postToIncomingWebhook(reply, data);
@@ -124,10 +200,16 @@ async function handleChatRequest(req, res) {
   }
 
   try {
-    const output = await runPromptWithMemory(messageText, data, 'synology_chat');
+    const output = await generateChatReply(messageText, data);
+    const interactiveReply = parseInteractiveReply(output);
+    if (interactiveReply) {
+      sendJson(res, 200, { text: formatInteractiveFallback(interactiveReply) });
+      return true;
+    }
     sendJson(res, 200, { text: truncateReply(output) });
   } catch (err) {
-    sendJson(res, 500, { text: `Codex 執行失敗: ${truncateReply(err.message || 'unknown_error')}` });
+    const prefix = parseScheduleCommand(messageText) ? '排程處理失敗' : 'Codex 執行失敗';
+    sendJson(res, 500, { text: `${prefix}: ${truncateReply(err.message || 'unknown_error')}` });
   }
   return true;
 }

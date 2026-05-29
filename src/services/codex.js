@@ -6,7 +6,7 @@ const path = require('path');
 const http = require('http');
 const https = require('https');
 const { 
-  CODEX_BIN, CODEX_WORKDIR, CODEX_BYPASS_SANDBOX, CODEX_SANDBOX_MODE, CODEX_MODEL, 
+  CODEX_BIN, CODEX_WORKDIR, CODEX_BYPASS_SANDBOX, CODEX_SANDBOX_MODE, CODEX_MODEL, CODEX_DEFAULT_PROFILE,
   CODEX_TIMEOUT_MS, CODEX_STALE_TIMEOUT_MS, CODEX_HEARTBEAT_INTERVAL_MS,
   MAX_REPLY_CHARS, SYSTEM_PROMPT, SYSTEM_TIMEZONE, VISION_MODEL, OLLAMA_API_URL, UPLOADS_DIR
 } = require('../config');
@@ -40,6 +40,9 @@ function buildPrompt(text, data, memoryContext, recentHistory = '') {
     '    (註：`--buttons` 必須包含 `text`(顯示文字), `name`(動作名), `value`(傳回值)。可選 `style`: "green", "red", "default")',
     '    範例：`[{"name":"ok","text":"確認","value":"yes","style":"green"}]`',
     '- **互動處理**：當使用者點擊按鈕時，你會收到 `[使用者點擊了互動按鈕: ...]` 的訊息，請根據此訊息繼續對話。',
+    '- **按鈕回覆優先方式**：若你要向使用者提問並提供按鈕選項，優先直接輸出 JSON，不要先執行 `notify.js`。',
+    '- JSON 格式必須為：`{"reply_mode":"buttons","text":"問題文字","buttons":[{"name":"action_id","text":"按鈕文字","value":"回傳值","style":"default|green|red"}]}`',
+    '- 只有在你明確要使用者點按鈕做下一步選擇、確認或核准時，才輸出這種 JSON；不要額外包 markdown code fence 或解說文字。',
     '- **重要**：請確保指令執行成功（透過工具輸出確認），不要在未執行工具的情況下假稱操作成功。',
   ];
   
@@ -101,6 +104,11 @@ function runCodex(prompt, extraEnv = {}, options = {}) {
   return codexBreaker.run(() => {
     const cleanPrompt = String(prompt || '').replace(/\0/g, '');
     const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+    const profile = String(options.profile || '').trim() || CODEX_DEFAULT_PROFILE;
+    const model = String(options.model || '').trim() || CODEX_MODEL;
+    const timeoutMs = Number(options.timeoutMs || CODEX_TIMEOUT_MS);
+    const staleTimeoutMs = Number(options.staleTimeoutMs || CODEX_STALE_TIMEOUT_MS);
+    const metadataTag = String(options.metadataTag || 'default');
 
     return new Promise((resolve, reject) => {
     const args = [
@@ -116,9 +124,13 @@ function runCodex(prompt, extraEnv = {}, options = {}) {
       args.push('--sandbox', CODEX_SANDBOX_MODE);
     }
 
-    if (CODEX_MODEL) {
-      args.push('--model', CODEX_MODEL);
+    if (profile) {
+      args.push('--profile', profile);
+    } else if (model) {
+      args.push('--model', model);
     }
+
+    log(`codex dispatch: tag=${metadataTag} profile=${profile || '-'} model=${profile ? '-' : (model || '-')}`);
 
     args.push(cleanPrompt);
 
@@ -137,20 +149,20 @@ function runCodex(prompt, extraEnv = {}, options = {}) {
 
     const absoluteTimer = setTimeout(() => {
       timedOut = true;
-      log(`codex absolute timeout after ${CODEX_TIMEOUT_MS}ms, killing process pid=${child.pid}`);
+      log(`codex absolute timeout after ${timeoutMs}ms, tag=${metadataTag}, pid=${child.pid}`);
       child.kill('SIGTERM');
       setTimeout(() => { if (child.connected) child.kill('SIGKILL'); }, 3000);
-    }, CODEX_TIMEOUT_MS);
+    }, timeoutMs);
 
     let staleTimer;
     const resetStaleTimer = () => {
       if (staleTimer) clearTimeout(staleTimer);
       staleTimer = setTimeout(() => {
         staleTimeoutReached = true;
-        log(`codex stale timeout after ${CODEX_STALE_TIMEOUT_MS}ms of inactivity, killing process pid=${child.pid}`);
+        log(`codex stale timeout after ${staleTimeoutMs}ms of inactivity, tag=${metadataTag}, pid=${child.pid}`);
         child.kill('SIGTERM');
         setTimeout(() => { if (child.connected) child.kill('SIGKILL'); }, 3000);
-      }, CODEX_STALE_TIMEOUT_MS);
+      }, staleTimeoutMs);
     };
     resetStaleTimer();
 
@@ -199,7 +211,7 @@ function runCodex(prompt, extraEnv = {}, options = {}) {
       if (isTimeout) {
         if (hasPartialOutput) {
           const timeoutType = timedOut ? '絕對逾時' : '閒置逾時';
-          const limit = timedOut ? CODEX_TIMEOUT_MS : CODEX_STALE_TIMEOUT_MS;
+          const limit = timedOut ? timeoutMs : staleTimeoutMs;
           const result = stdout.trim() + `\n\n[系統提示：任務執行已達 ${timeoutType} (${limit}ms)，以上為部分完成的結果。]`;
           resolve(result);
         } else {

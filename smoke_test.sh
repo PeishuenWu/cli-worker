@@ -10,6 +10,7 @@ PARALLEL_REQUESTS="${PARALLEL_REQUESTS:-12}"
 TOTAL_REQUESTS="${TOTAL_REQUESTS:-24}"
 TEST_CHANNEL_ID="${TEST_CHANNEL_ID:-99100}"
 TEST_USERNAME="${TEST_USERNAME:-smoke_tester}"
+ACK_MAX_SECONDS="${ACK_MAX_SECONDS:-3}"
 
 if [[ -f .env ]]; then
   # shellcheck disable=SC1091
@@ -25,6 +26,7 @@ BASE_URL="http://${TARGET_HOST}:${CHAT_BRIDGE_PORT}"
 OUTGOING_URL="${BASE_URL}${CHAT_BRIDGE_PATH}"
 HEALTH_URL="${BASE_URL}/healthz"
 METRICS_URL="${BASE_URL}/metrics"
+INTERNAL_NOTIFY_URL="${BASE_URL}/internal/notify"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -56,6 +58,26 @@ post_payload() {
   curl -sS -X POST "$OUTGOING_URL" \
     -H 'Content-Type: application/x-www-form-urlencoded' \
     --data-urlencode "payload=${payload}"
+}
+
+post_payload_with_timing() {
+  local text="$1"
+  local body_file="$2"
+  local payload
+  payload=$(printf '{"text":"%s","token":"%s","username":"%s","channel_id":"%s"}' \
+    "$text" "$SYNCHAT_OUTGOING_TOKEN" "$TEST_USERNAME" "$TEST_CHANNEL_ID")
+  curl -sS -o "$body_file" -w '%{time_total}' -X POST "$OUTGOING_URL" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode "payload=${payload}"
+}
+
+post_internal_notify_buttons() {
+  local payload
+  payload=$(printf '{"text":"smoke interactive test","channel_id":"%s","user_id":"","attachments":[{"callback_id":"smoke_buttons","actions":[{"type":"button","name":"approve","text":"同意","value":"approve","style":"green"},{"type":"button","name":"reject","text":"拒絕","value":"reject","style":"red"}]}]}' \
+    "$TEST_CHANNEL_ID")
+  curl -sS -X POST "$INTERNAL_NOTIFY_URL" \
+    -H 'Content-Type: application/json' \
+    --data "$payload"
 }
 
 get_metrics() {
@@ -112,6 +134,14 @@ else
   fail "healthz 失敗: ${HEALTH_URL}（已重試 ${HEALTH_RETRY_MAX} 次）"
 fi
 
+echo "[STEP] 驗證 internal notify 按鈕路徑"
+internal_notify_resp="$(post_internal_notify_buttons || true)"
+if [[ "$internal_notify_resp" == *'"ok":true'* ]]; then
+  pass "internal notify 按鈕 payload 可送入 bridge"
+else
+  fail "internal notify 按鈕 payload 異常: ${internal_notify_resp}"
+fi
+
 echo "[STEP] 檢查必要 token"
 if [[ -n "$SYNCHAT_OUTGOING_TOKEN" ]]; then
   pass "SYNCHAT_OUTGOING_TOKEN 已設定"
@@ -121,7 +151,10 @@ fi
 
 if [[ -n "$SYNCHAT_OUTGOING_TOKEN" ]]; then
   echo "[STEP] 送出基本訊息（同 channel）"
-  resp1="$(post_payload "smoke test 第一輪 $(date +%s)" || true)"
+  ack_body_file="$(mktemp)"
+  ack_time="$(post_payload_with_timing "smoke test 第一輪 $(date +%s)" "$ack_body_file" || true)"
+  resp1="$(cat "$ack_body_file" 2>/dev/null || true)"
+  rm -f "$ack_body_file"
   resp2="$(post_payload "smoke test 第二輪，請記住第一輪" || true)"
 
   if [[ "$resp1" == *"已收到"* || "$resp1" == *"text"* ]]; then
@@ -134,6 +167,12 @@ if [[ -n "$SYNCHAT_OUTGOING_TOKEN" ]]; then
     pass "第二輪 outgoing 回應正常"
   else
     fail "第二輪 outgoing 回應異常: ${resp2}"
+  fi
+
+  if awk "BEGIN { exit !(${ack_time:-999} <= ${ACK_MAX_SECONDS}) }"; then
+    pass "第一輪 ACK 時間正常 (${ack_time}s <= ${ACK_MAX_SECONDS}s)"
+  else
+    fail "第一輪 ACK 過慢 (${ack_time}s > ${ACK_MAX_SECONDS}s)"
   fi
 fi
 
