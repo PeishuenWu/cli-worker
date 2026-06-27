@@ -62,6 +62,7 @@ const TASK_QUEUE_MAX = Math.max(10, Math.min(Number(process.env.TASK_QUEUE_MAX |
 const SCHEDULER_ENABLE = String(process.env.SCHEDULER_ENABLE || 'false');
 const SCHEDULER_DB_PATH = process.env.SCHEDULER_DB_PATH || '/home/codex/.codex/scheduler/jobs.sqlite';
 const AUTH_DB_PATH = process.env.AUTH_DB_PATH || '/home/codex/.codex/auth/fido.sqlite';
+const CODEX_CHAT_SESSION_DB_PATH = process.env.CODEX_CHAT_SESSION_DB_PATH || '/home/codex/.codex/codex_chat/sessions.sqlite';
 const SCHEDULER_TICK_SECONDS = Number(process.env.SCHEDULER_TICK_SECONDS || 30);
 const SCHEDULER_CLAIM_LIMIT = Number(process.env.SCHEDULER_CLAIM_LIMIT || 3);
 const SYSTEM_TIMEZONE = process.env.TZ || 'Asia/Taipei';
@@ -86,6 +87,7 @@ const ADMIN_UI_ORIGIN = process.env.ADMIN_UI_ORIGIN || `http://${ADMIN_UI_RP_ID}
 
 const APP_SERVER_TOKEN_FILE = process.env.APP_SERVER_TOKEN_FILE || '/home/codex/.codex/app-server-token';
 const APP_SERVER_WS_URL = process.env.APP_SERVER_WS_URL || 'ws://127.0.0.1:9090';
+const CODEX_ARCHIVED_SESSIONS_DIR = process.env.CODEX_ARCHIVED_SESSIONS_DIR || '/home/codex/.codex/sessions';
 
 const DEFAULT_CHAT_ID = (process.env.DEFAULT_CHAT_ID || '').trim();
 const SYNCHAT_FILE_URL_BASE = (process.env.SYNCHAT_FILE_URL_BASE || '').trim();
@@ -157,6 +159,7 @@ module.exports = {
   SCHEDULER_ENABLE,
   SCHEDULER_DB_PATH,
   AUTH_DB_PATH,
+  CODEX_CHAT_SESSION_DB_PATH,
   SCHEDULER_TICK_SECONDS,
   SCHEDULER_CLAIM_LIMIT,
   SYSTEM_TIMEZONE,
@@ -179,6 +182,7 @@ module.exports = {
   ADMIN_UI_ORIGIN,
   APP_SERVER_TOKEN_FILE,
   APP_SERVER_WS_URL,
+  CODEX_ARCHIVED_SESSIONS_DIR,
   DEFAULT_CHAT_ID,
   SYNCHAT_FILE_URL_BASE,
   allowedUsersSet,

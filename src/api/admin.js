@@ -167,7 +167,7 @@ function renderAdminPage() {
             hx-get="${ADMIN_UI_PATH}/partials/chat" 
             hx-target="#tab-content"
             onclick="switchTab(this)">
-            對話測試 (Chat)
+            Codex Chat
           </button>
         </li>
         <li>
@@ -492,31 +492,70 @@ async function renderEventsPartial() {
 async function renderChatPartial() {
   return `
 <div class="card-header">
-  <h2>對話測試 (Codex Chat)</h2>
-  <span class="muted">基於 codex app-server 的原生對話體驗</span>
+  <h2>Codex Chat</h2>
+  <span class="muted">可建立新 session，或還原先前已記錄的 Codex Chat session</span>
 </div>
 
-<div id="chat-container" style="display: flex; flex-direction: column; height: calc(100vh - 350px); background: #111; border-radius: 8px; border: 1px solid #333; overflow: hidden;">
-  <div id="chat-messages" style="flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
-    <div style="text-align: center; color: #666; font-size: 0.9rem; margin-top: 2rem;">
-      <p>歡迎來到 Codex Chat！這裡可以直接與後端的 app-server 溝通。</p>
-      <p>訊息會即時透過 WebSocket 串流傳輸。</p>
+<div style="display: grid; grid-template-columns: 300px 1fr; gap: 1rem; min-height: calc(100vh - 350px);">
+  <aside style="border: 1px solid #333; border-radius: 8px; background: #141414; overflow: hidden;">
+    <div style="padding: 1rem; border-bottom: 1px solid #333; display: flex; gap: 0.5rem; align-items: center;">
+      <button id="new-session-btn" style="margin: 0; flex: 1;">建立新 Session</button>
+      <span id="session-count" class="muted" style="font-size: 0.75rem;">載入中...</span>
     </div>
-  </div>
-  
-  <div id="chat-input-area" style="padding: 1rem; background: #1a1a1a; border-top: 1px solid #333;">
-    <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
-      <textarea id="chat-input" placeholder="輸入訊息... (Shift+Enter 換行, Enter 送出)" rows="1" 
-        style="margin: 0; background: #222; border-color: #444; color: #eee; resize: none; overflow-y: hidden; min-height: 44px;"></textarea>
-      <button id="chat-send-btn" style="width: auto; margin: 0; padding: 0.5rem 1rem; height: 44px;">送出</button>
+    <div style="padding: 0.75rem 0.75rem 0.25rem; color: #aaa; font-size: 0.75rem;">目前 Session</div>
+    <div id="session-list" style="max-height: 240px; overflow-y: auto; padding: 0.5rem;"></div>
+    <div style="border-top: 1px solid #333; padding: 0.75rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <div style="color: #aaa; font-size: 0.75rem;">Archived Sessions</div>
+        <span id="archive-count" class="muted" style="font-size: 0.75rem;">0 筆</span>
+      </div>
+      <input id="archive-search-input" type="search" placeholder="搜尋 archived session..." style="margin: 0 0 0.5rem; background: #1f1f1f; border-color: #3a3a3a; color: #eee;">
     </div>
-    <div id="chat-status" class="muted" style="margin-top: 0.5rem; font-size: 0.75rem;">
-      連線狀態: <span id="ws-status">正在連線...</span>
+    <div id="archive-list" style="max-height: calc(100vh - 720px); min-height: 180px; overflow-y: auto; padding: 0 0.5rem 0.5rem;"></div>
+  </aside>
+
+  <div id="chat-container" style="display: flex; flex-direction: column; height: calc(100vh - 350px); background: #111; border-radius: 8px; border: 1px solid #333; overflow: hidden;">
+    <div style="padding: 0.75rem 1rem; border-bottom: 1px solid #333; background: #161616; display: flex; justify-content: space-between; gap: 1rem;">
+      <div>
+        <div id="active-session-title" style="font-weight: 600; color: #eee;">尚未選擇 Session</div>
+        <div id="active-session-meta" class="muted" style="font-size: 0.75rem;">請先建立新 session，或還原既有 session。</div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem;">
+        <div id="thread-info" class="muted" style="font-size: 0.75rem; text-align: right;"></div>
+        <button id="archive-import-btn" class="secondary" style="display: none; margin: 0; padding: 0.25rem 0.6rem; font-size: 0.75rem; width: auto;">匯入成新 Session</button>
+      </div>
+    </div>
+
+    <div id="chat-messages" style="flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+      <div id="chat-empty-state" style="text-align: center; color: #666; font-size: 0.9rem; margin-top: 2rem;">
+        <p>Codex Chat 可直接與後端 app-server 溝通。</p>
+        <p>支援建立新 session，或還原已記錄的 session 與 thread。</p>
+      </div>
+    </div>
+    
+    <div id="chat-input-area" style="padding: 1rem; background: #1a1a1a; border-top: 1px solid #333;">
+      <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
+        <textarea id="chat-input" placeholder="輸入訊息... (Shift+Enter 換行, Enter 送出)" rows="1" 
+          style="margin: 0; background: #222; border-color: #444; color: #eee; resize: none; overflow-y: hidden; min-height: 44px;" disabled></textarea>
+        <button id="chat-send-btn" style="width: auto; margin: 0; padding: 0.5rem 1rem; height: 44px;" disabled>送出</button>
+      </div>
+      <div id="chat-status" class="muted" style="margin-top: 0.5rem; font-size: 0.75rem;">
+        連線狀態: <span id="ws-status">正在連線...</span>
+        <button id="ws-reconnect-btn" class="secondary" style="display: none; margin-left: 0.75rem; padding: 0.15rem 0.5rem; font-size: 0.7rem; width: auto;">重新連線</button>
+      </div>
     </div>
   </div>
 </div>
 
 <style>
+  .session-item { padding: 0.75rem; border: 1px solid #2d2d2d; border-radius: 8px; cursor: pointer; background: #1a1a1a; color: #ddd; margin-bottom: 0.5rem; }
+  .session-item:hover { border-color: #4a4a4a; background: #202020; }
+  .session-item.active { border-color: #0d6efd; background: rgba(13,110,253,0.12); }
+  .archive-item { padding: 0.65rem 0.75rem; border: 1px solid #2d2d2d; border-radius: 8px; cursor: pointer; background: #191919; color: #ddd; margin-bottom: 0.5rem; }
+  .archive-item:hover { border-color: #4a4a4a; background: #202020; }
+  .archive-item.active { border-color: #20c997; background: rgba(32,201,151,0.12); }
+  .session-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 0.25rem; }
+  .session-preview { color: #888; font-size: 0.75rem; line-height: 1.4; }
   .msg { max-width: 85%; padding: 0.75rem 1rem; border-radius: 12px; line-height: 1.5; position: relative; word-break: break-word; font-size: 14px; }
   .msg-user { align-self: flex-end; background: #007bff; color: white; border-bottom-right-radius: 2px; }
   .msg-assistant { align-self: flex-start; background: #333; color: #eee; border-bottom-left-radius: 2px; border: 1px solid #444; }
@@ -531,6 +570,17 @@ async function renderChatPartial() {
     const chatInput = document.getElementById('chat-input');
     const sendBtn = document.getElementById('chat-send-btn');
     const wsStatus = document.getElementById('ws-status');
+    const activeSessionTitle = document.getElementById('active-session-title');
+    const activeSessionMeta = document.getElementById('active-session-meta');
+    const threadInfo = document.getElementById('thread-info');
+    const sessionList = document.getElementById('session-list');
+    const sessionCount = document.getElementById('session-count');
+    const newSessionBtn = document.getElementById('new-session-btn');
+    const archiveList = document.getElementById('archive-list');
+    const archiveCount = document.getElementById('archive-count');
+    const archiveSearchInput = document.getElementById('archive-search-input');
+    const archiveImportBtn = document.getElementById('archive-import-btn');
+    const reconnectBtn = document.getElementById('ws-reconnect-btn');
     
     let ws = null;
     let requestId = 0;
@@ -538,8 +588,20 @@ async function renderChatPartial() {
     let currentThreadId = null;
     let currentMessageDiv = null;
     let currentMessageText = '';
+    let activeSession = null;
+    let sessions = [];
+    let archives = [];
+    let activeArchive = null;
+    let isInitialized = false;
+    let pendingTurnText = null;
+    let reconnectTimer = null;
+    let reconnectAttempts = 0;
+    let manualClose = false;
+    const MAX_RECONNECT_DELAY_MS = 10000;
     
     function appendMessage(role, text, isStreaming = false) {
+      const emptyState = document.getElementById('chat-empty-state');
+      if (emptyState) emptyState.remove();
       const div = document.createElement('div');
       div.className = \`msg msg-\${role}\`;
       if (isStreaming) div.classList.add('typing-indicator');
@@ -554,18 +616,231 @@ async function renderChatPartial() {
       wsStatus.style.color = color || 'inherit';
     }
 
-    function connect() {
+    function clearReconnectTimer() {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    }
+
+    function stopConnectionState() {
+      clearReconnectTimer();
+    }
+
+    function getReconnectDelay() {
+      return Math.min(1000 * Math.max(1, Math.pow(2, reconnectAttempts)), MAX_RECONNECT_DELAY_MS);
+    }
+
+    function scheduleReconnect() {
+      if (manualClose || reconnectTimer) return;
+      reconnectAttempts += 1;
+      const delay = getReconnectDelay();
+      updateStatus(\`重連中（\${Math.ceil(delay / 1000)} 秒後）\`, '#ff9800');
+      reconnectBtn.style.display = 'inline-block';
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect({ isReconnect: true });
+      }, delay);
+    }
+
+    function formatTs(ts) {
+      if (!ts) return '';
+      try {
+        return new Date(ts).toLocaleString();
+      } catch (_err) {
+        return String(ts);
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function updateSessionHeader() {
+      if (!activeSession) {
+        activeSessionTitle.textContent = '尚未選擇 Session';
+        activeSessionMeta.textContent = '請先建立新 session，或還原既有 session。';
+        threadInfo.textContent = '';
+        archiveImportBtn.style.display = activeArchive ? 'inline-block' : 'none';
+        chatInput.disabled = true;
+        sendBtn.disabled = true;
+        return;
+      }
+      archiveImportBtn.style.display = 'none';
+      activeSessionTitle.textContent = activeSession.title;
+      activeSessionMeta.textContent = \`最後更新: \${formatTs(activeSession.updated_at)} | 訊息數: \${(activeSession.messages || []).length}\`;
+      threadInfo.textContent = activeSession.thread_id ? \`thread: \${activeSession.thread_id}\` : 'thread: 尚未建立';
+      chatInput.disabled = !isInitialized;
+      sendBtn.disabled = !isInitialized;
+    }
+
+    function renderSessionList() {
+      sessionCount.textContent = \`\${sessions.length} 筆\`;
+      sessionList.innerHTML = sessions.map((session) => {
+        const isActive = activeSession && activeSession.id === session.id;
+        const preview = session.last_message || '尚無訊息';
+        return \`
+          <div class="session-item \${isActive ? 'active' : ''}" data-session-id="\${escapeHtml(session.id)}">
+            <div class="session-title">\${escapeHtml(session.title)}</div>
+            <div class="session-preview">\${escapeHtml(preview.slice(0, 80))}</div>
+            <div class="muted" style="font-size: 0.7rem; margin-top: 0.35rem;">
+              \${escapeHtml(formatTs(session.updated_at))} | \${escapeHtml(String(session.message_count || 0))} 則
+            </div>
+          </div>
+        \`;
+      }).join('');
+
+      sessionList.querySelectorAll('[data-session-id]').forEach((el) => {
+        el.addEventListener('click', () => {
+          loadSession(el.getAttribute('data-session-id'));
+        });
+      });
+    }
+
+    function renderArchiveList() {
+      archiveCount.textContent = \`\${archives.length} 筆\`;
+      archiveList.innerHTML = archives.map((archive) => {
+        const isActive = activeArchive && activeArchive.id === archive.id;
+        return \`
+          <div class="archive-item \${isActive ? 'active' : ''}" data-archive-id="\${escapeHtml(archive.id)}">
+            <div class="session-title">\${escapeHtml(archive.title)}</div>
+            <div class="session-preview">\${escapeHtml((archive.last_message || archive.relative_path || '').slice(0, 90))}</div>
+            <div class="muted" style="font-size: 0.7rem; margin-top: 0.35rem;">
+              \${escapeHtml(formatTs(archive.updated_at))} | \${escapeHtml(String(archive.turn_count || 0))} turns
+            </div>
+          </div>
+        \`;
+      }).join('') || '<div class="muted" style="padding: 0.75rem;">沒有符合的 archived session</div>';
+
+      archiveList.querySelectorAll('[data-archive-id]').forEach((el) => {
+        el.addEventListener('click', () => {
+          loadArchive(el.getAttribute('data-archive-id'));
+        });
+      });
+    }
+
+    function renderMessages(messages) {
+      chatMessages.innerHTML = '';
+      if (!messages || messages.length === 0) {
+        chatMessages.innerHTML = '<div id="chat-empty-state" style="text-align: center; color: #666; font-size: 0.9rem; margin-top: 2rem;"><p>這個 session 目前還沒有訊息。</p></div>';
+        return;
+      }
+      messages.forEach((message) => appendMessage(message.role, message.text));
+    }
+
+    async function fetchJson(url, options) {
+      const response = await fetch(url, options);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || \`request_failed_\${response.status}\`);
+      }
+      return payload;
+    }
+
+    async function refreshSessionList() {
+      const payload = await fetchJson('${ADMIN_UI_PATH}/chat/sessions');
+      sessions = payload.sessions || [];
+      renderSessionList();
+    }
+
+    async function refreshArchiveList(search = '') {
+      const query = search ? \`?search=\${encodeURIComponent(search)}\` : '';
+      const payload = await fetchJson(\`${ADMIN_UI_PATH}/chat/archives\${query}\`);
+      archives = payload.archives || [];
+      renderArchiveList();
+    }
+
+    async function createSession() {
+      const payload = await fetchJson('${ADMIN_UI_PATH}/chat/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'New Session' }),
+      });
+      await refreshSessionList();
+      await loadSession(payload.session.id);
+    }
+
+    async function loadSession(sessionId) {
+      const payload = await fetchJson(\`${ADMIN_UI_PATH}/chat/sessions/\${encodeURIComponent(sessionId)}\`);
+      activeSession = payload.session;
+      activeArchive = null;
+      currentThreadId = activeSession.thread_id || null;
+      pendingTurnText = null;
+      renderMessages(activeSession.messages || []);
+      updateSessionHeader();
+      renderSessionList();
+      if (isInitialized) {
+        chatInput.focus();
+      }
+    }
+
+    async function loadArchive(archiveId) {
+      const payload = await fetchJson(\`${ADMIN_UI_PATH}/chat/archives/\${encodeURIComponent(archiveId)}\`);
+      activeArchive = payload.archive;
+      activeSession = null;
+      currentThreadId = null;
+      pendingTurnText = null;
+      renderMessages(activeArchive.messages || []);
+      activeSessionTitle.textContent = \`Archived: \${activeArchive.title}\`;
+      activeSessionMeta.textContent = \`\${activeArchive.relative_path} | 訊息數: \${(activeArchive.messages || []).length}\`;
+      threadInfo.textContent = \`source: \${activeArchive.originator || activeArchive.source || 'archive'}\`;
+      archiveImportBtn.style.display = 'inline-block';
+      chatInput.disabled = true;
+      sendBtn.disabled = true;
+      renderSessionList();
+      renderArchiveList();
+    }
+
+    async function importArchive() {
+      if (!activeArchive) return;
+      const payload = await fetchJson(\`${ADMIN_UI_PATH}/chat/archives/\${encodeURIComponent(activeArchive.id)}/import\`, {
+        method: 'POST',
+      });
+      await refreshSessionList();
+      await loadSession(payload.session.id);
+    }
+
+    async function persistSession(extra = {}) {
+      if (!activeSession) return;
+      const title = activeSession.title === 'New Session'
+        ? (((activeSession.messages || []).find((message) => message.role === 'user') || {}).text || 'New Session').slice(0, 120)
+        : activeSession.title;
+      const payload = await fetchJson(\`${ADMIN_UI_PATH}/chat/sessions/\${encodeURIComponent(activeSession.id)}\`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          threadId: currentThreadId || '',
+          messages: activeSession.messages || [],
+          ...extra,
+        }),
+      });
+      activeSession = payload.session;
+      currentThreadId = activeSession.thread_id || null;
+      await refreshSessionList();
+      updateSessionHeader();
+    }
+
+    function connect(options = {}) {
+      const isReconnect = Boolean(options.isReconnect);
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = \`\${protocol}//\${window.location.host}${ADMIN_UI_PATH}/ws\`;
-      
-      appendMessage('system', \`正在連線至 \${wsUrl}...\`);
+
+      stopConnectionState();
+      isInitialized = false;
+      chatInput.disabled = true;
+      sendBtn.disabled = true;
+      reconnectBtn.style.display = 'none';
+      updateStatus(isReconnect ? '重新連線中...' : '正在連線...', '#ff9800');
       ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
+        reconnectAttempts = 0;
         updateStatus('已連線', '#28a745');
-        appendMessage('system', 'WebSocket 已開啟，等待 200ms 後發送 initialize...');
+        reconnectBtn.style.display = 'none';
 
-        // Give proxy/backend a brief moment to stabilize
         setTimeout(() => {
           initId = sendRpc('initialize', {
             clientInfo: { name: 'codex-worker-web', version: '1.0.0' },
@@ -583,11 +858,17 @@ async function renderChatPartial() {
 
       ws.onclose = (e) => {
         updateStatus('連線中斷', '#dc3545');
-        appendMessage('system', \`連線已關閉 (code=\${e.code}, reason=\${e.reason})\`);
+        reconnectBtn.style.display = 'inline-block';
+        isInitialized = false;
+        chatInput.disabled = true;
+        sendBtn.disabled = true;
+        if (!manualClose) {
+          scheduleReconnect();
+        }
       };
 
       ws.onerror = (e) => {
-        appendMessage('system', 'WebSocket 發生錯誤');
+        updateStatus('連線錯誤', '#dc3545');
       };
 
       ws.onmessage = async (e) => {
@@ -600,26 +881,38 @@ async function renderChatPartial() {
           appendMessage('system', 'WS 訊息解析失敗: ' + (err && err.message ? err.message : String(err)));
         }
       };
-      }
+    }
 
-      function sendRpc(method, params) {
+    function sendRpc(method, params) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        throw new Error('ws_not_connected');
+      }
       const id = ++requestId;
       const payload = { jsonrpc: '2.0', id, method, params };
       console.log('SEND RPC:', payload);
       ws.send(JSON.stringify(payload));
       return id;
-      }
+    }
 
-      function handleRpc(msg) {
-      // 1. Handle Handshake
+    function handleRpc(msg) {
       if (msg.id === initId && msg.result) {
-        appendMessage('system', '收到初始化回應，發送 initialized 通知...');
+        isInitialized = true;
         ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'initialized', params: {} }));
-        sendRpc('thread/start', {});
-      } 
- else if (msg.result && msg.result.thread) {
+        updateSessionHeader();
+      } else if (msg.result && msg.result.thread) {
         currentThreadId = msg.result.thread.id;
-        appendMessage('system', \`執行緒已建立: \${currentThreadId}\`);
+        if (activeSession) {
+          activeSession.thread_id = currentThreadId;
+        }
+        persistSession().catch((err) => appendMessage('system', 'Session 儲存失敗: ' + err.message));
+        if (pendingTurnText && activeSession) {
+          const text = pendingTurnText;
+          pendingTurnText = null;
+          sendRpc('turn/start', {
+            threadId: currentThreadId,
+            input: [{ type: 'text', text }]
+          });
+        }
       } else if (msg.method === 'item/started') {
         if (msg.params.item.type === 'agentMessage') {
           currentMessageDiv = appendMessage('assistant', '', true);
@@ -638,6 +931,11 @@ async function renderChatPartial() {
             currentMessageDiv.textContent = msg.params.item.text;
             currentMessageDiv = null;
           }
+          if (activeSession) {
+            activeSession.messages = activeSession.messages || [];
+            activeSession.messages.push({ role: 'assistant', text: msg.params.item.text });
+            persistSession().catch((err) => appendMessage('system', 'Session 儲存失敗: ' + err.message));
+          }
         }
       } else if (msg.method === 'turn/completed') {
         chatInput.disabled = false;
@@ -645,6 +943,12 @@ async function renderChatPartial() {
         chatInput.focus();
       } else if (msg.error) {
         appendMessage('system', \`RPC Error: \${msg.error.message}\`);
+        if (/thread/i.test(String(msg.error.message || '')) && activeSession && currentThreadId) {
+          appendMessage('system', '既有 thread 無法還原，將在下次送出時建立新 thread。');
+          currentThreadId = null;
+          activeSession.thread_id = '';
+          persistSession().catch(() => {});
+        }
         chatInput.disabled = false;
         sendBtn.disabled = false;
       }
@@ -652,18 +956,42 @@ async function renderChatPartial() {
 
     function sendMessage() {
       const text = chatInput.value.trim();
-      if (!text || !currentThreadId || chatInput.disabled) return;
+      if (!text || !activeSession || chatInput.disabled || !isInitialized) return;
       
       appendMessage('user', text);
+      activeSession.messages = activeSession.messages || [];
+      activeSession.messages.push({ role: 'user', text });
       chatInput.value = '';
       chatInput.style.height = 'auto';
       chatInput.disabled = true;
       sendBtn.disabled = true;
-      
-      sendRpc('turn/start', {
-        threadId: currentThreadId,
-        input: [{ type: 'text', text }]
-      });
+      persistSession().catch((err) => appendMessage('system', 'Session 儲存失敗: ' + err.message));
+
+      const sendTurn = () => {
+        try {
+          sendRpc('turn/start', {
+            threadId: currentThreadId,
+            input: [{ type: 'text', text }]
+          });
+        } catch (err) {
+          pendingTurnText = text;
+          appendMessage('system', '連線暫時不可用，訊息已保留，重連後會再送出。');
+          scheduleReconnect();
+        }
+      };
+
+      if (!currentThreadId) {
+        pendingTurnText = text;
+        try {
+          sendRpc('thread/start', {});
+        } catch (err) {
+          appendMessage('system', '目前無法建立 thread，將在重連後重試。');
+          scheduleReconnect();
+        }
+        return;
+      }
+
+      sendTurn();
     }
 
     chatInput.addEventListener('keydown', (e) => {
@@ -674,6 +1002,24 @@ async function renderChatPartial() {
     });
     
     sendBtn.addEventListener('click', sendMessage);
+    newSessionBtn.addEventListener('click', () => {
+      createSession().catch((err) => appendMessage('system', '建立 session 失敗: ' + err.message));
+    });
+    archiveImportBtn.addEventListener('click', () => {
+      importArchive().catch((err) => appendMessage('system', '匯入 archived session 失敗: ' + err.message));
+    });
+    reconnectBtn.addEventListener('click', () => {
+      clearReconnectTimer();
+      connect({ isReconnect: true });
+    });
+    archiveSearchInput.addEventListener('input', () => {
+      clearTimeout(window._archiveSearchTimer);
+      window._archiveSearchTimer = setTimeout(() => {
+        refreshArchiveList(archiveSearchInput.value).catch((err) => {
+          appendMessage('system', '讀取 archived sessions 失敗: ' + err.message);
+        });
+      }, 250);
+    });
     
     chatInput.addEventListener('input', function() {
       this.style.height = 'auto';
@@ -681,6 +1027,21 @@ async function renderChatPartial() {
     });
 
     connect();
+    refreshSessionList().catch((err) => {
+      appendMessage('system', '讀取 session 清單失敗: ' + err.message);
+      sessionCount.textContent = '讀取失敗';
+    });
+    refreshArchiveList().catch((err) => {
+      appendMessage('system', '讀取 archived sessions 失敗: ' + err.message);
+      archiveCount.textContent = '讀取失敗';
+    });
+    window.addEventListener('beforeunload', () => {
+      manualClose = true;
+      stopConnectionState();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+    });
   })();
 </script>
 `;

@@ -18,6 +18,7 @@ const {
   renderLoginPage, handleLoginOptions, handleLoginVerify,
   handleRegisterOptions, handleRegisterVerify
 } = require('./auth');
+const { handleAdminChatSessionApi } = require('./admin_chat_sessions');
 
 function generateRequestId() {
   return Math.random().toString(36).substring(2, 9) + Date.now().toString(36).substring(4);
@@ -216,6 +217,11 @@ function startServer(handleChatRequest) {
       if (url.pathname === `${ADMIN_UI_PATH}/partials/chat`) {
         sendHtml(res, 200, await renderChatPartial());
         return;
+      }
+
+      if (url.pathname.startsWith(`${ADMIN_UI_PATH}/chat/sessions`) || url.pathname.startsWith(`${ADMIN_UI_PATH}/chat/archives`)) {
+        const handled = await handleAdminChatSessionApi(req, res, url, ADMIN_UI_PATH);
+        if (handled) return;
       }
 
       // Cancel Schedule

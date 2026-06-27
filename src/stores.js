@@ -4,6 +4,7 @@ const { MemoryStore, buildMemoryContext, buildMemoryEntry } = require('../memory
 const { SchedulerStore } = require('../scheduler_store');
 const { ChatContextStore } = require('../chat_context_store');
 const { AuthStore } = require('./stores/auth_store');
+const { CodexChatSessionStore } = require('./stores/codex_chat_session_store');
 const {
   MEMORY_ENABLE, MEMORY_BACKEND, MEMORY_PROJECT, MEMORY_TOP_K, 
   MEMORY_SCORE_THRESHOLD, MEMORY_SHORT_TTL_DAYS, QDRANT_URL, 
@@ -11,7 +12,7 @@ const {
   EMBEDDING_DIM, MEMORY_FALLBACK_FILE,
   SCHEDULER_ENABLE, SCHEDULER_DB_PATH,
   CHAT_CONTEXT_ENABLE, CHAT_CONTEXT_DB_PATH, CHAT_CONTEXT_MAX_MESSAGES,
-  AUTH_DB_PATH
+  AUTH_DB_PATH, CODEX_CHAT_SESSION_DB_PATH
 } = require('./config');
 
 const memoryStore = new MemoryStore({
@@ -45,11 +46,16 @@ const authStore = new AuthStore({
   dbPath: AUTH_DB_PATH,
 });
 
+const codexChatSessionStore = new CodexChatSessionStore({
+  dbPath: CODEX_CHAT_SESSION_DB_PATH,
+});
+
 module.exports = {
   memoryStore,
   schedulerStore,
   chatContextStore,
   authStore,
+  codexChatSessionStore,
   buildMemoryContext,
   buildMemoryEntry,
 };
