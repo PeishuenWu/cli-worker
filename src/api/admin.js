@@ -713,7 +713,7 @@ async function renderChatPartial() {
               session.title || '',
               session.last_message || '',
               session.id || '',
-            ].join('\n').toLowerCase();
+            ].join('\\n').toLowerCase();
             return haystack.includes(normalizedTerm);
           })
         : sessions;
