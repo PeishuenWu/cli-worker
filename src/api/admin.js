@@ -578,7 +578,7 @@ async function renderChatPartial() {
   .chat-layout.sidebar-hidden { grid-template-columns: 1fr !important; }
   .chat-layout.sidebar-hidden #session-sidebar { display: none; }
   .sidebar-section-body.is-hidden { display: none; }
-  .msg { max-width: 85%; padding: 0.75rem 1rem; border-radius: 12px; line-height: 1.5; position: relative; word-break: break-word; font-size: 14px; }
+  .msg { max-width: 85%; padding: 0.75rem 1rem; border-radius: 12px; line-height: 1.5; position: relative; word-break: break-word; white-space: pre-wrap; font-size: 14px; }
   .msg-user { align-self: flex-end; background: #007bff; color: white; border-bottom-right-radius: 2px; }
   .msg-assistant { align-self: flex-start; background: #333; color: #eee; border-bottom-left-radius: 2px; border: 1px solid #444; }
   .msg-system { align-self: center; background: rgba(255,255,255,0.05); color: #888; font-size: 0.8rem; border-radius: 4px; padding: 0.25rem 0.75rem; }
@@ -1046,7 +1046,9 @@ async function renderChatPartial() {
     }
 
     function sendMessage() {
-      const text = chatInput.value.trim();
+      const text = chatInput.value
+        .replace(/\r\n?/g, '\n')
+        .replace(/^\n+|\n+$/g, '');
       if (!text || !activeSession || chatInput.disabled || !isInitialized) return;
       
       appendMessage('user', text);

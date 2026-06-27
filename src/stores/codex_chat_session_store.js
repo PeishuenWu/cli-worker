@@ -81,7 +81,10 @@ class CodexChatSessionStore {
     return messages
       .map((message) => {
         const role = ['user', 'assistant', 'system'].includes(message?.role) ? message.role : null;
-        const text = String(message?.text || '').replace(/\s+/g, ' ').trim().slice(0, this.maxMessageChars);
+        const text = String(message?.text || '')
+          .replace(/\r\n?/g, '\n')
+          .replace(/^\n+|\n+$/g, '')
+          .slice(0, this.maxMessageChars);
         if (!role || !text) return null;
         return { role, text };
       })
@@ -92,6 +95,9 @@ class CodexChatSessionStore {
   buildSessionSummary(row) {
     const messages = safeJsonParse(row.messages_json, []);
     const lastMessage = Array.isArray(messages) && messages.length > 0 ? messages[messages.length - 1] : null;
+    const lastMessageText = lastMessage
+      ? String(lastMessage.text || '').replace(/\s+/g, ' ').trim()
+      : '';
     return {
       id: row.id,
       title: row.title,
@@ -99,7 +105,7 @@ class CodexChatSessionStore {
       created_at: row.created_at,
       updated_at: row.updated_at,
       message_count: Array.isArray(messages) ? messages.length : 0,
-      last_message: lastMessage ? String(lastMessage.text || '') : '',
+      last_message: lastMessageText,
     };
   }
 
