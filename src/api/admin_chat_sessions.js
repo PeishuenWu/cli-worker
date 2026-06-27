@@ -96,6 +96,16 @@ async function handleAdminChatSessionApi(req, res, url, adminUiPath) {
     return true;
   }
 
+  if (req.method === 'DELETE') {
+    const deleted = await codexChatSessionStore.deleteSession(sessionId);
+    if (!deleted) {
+      sendJson(res, 404, { error: 'session_not_found' });
+      return true;
+    }
+    sendJson(res, 200, { ok: true });
+    return true;
+  }
+
   return false;
 }
 

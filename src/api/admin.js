@@ -538,7 +538,10 @@ async function renderChatPartial() {
       </div>
       <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem;">
         <div id="thread-info" class="muted" style="font-size: 0.75rem; text-align: right;"></div>
-        <button id="archive-import-btn" class="secondary" style="display: none; margin: 0; padding: 0.25rem 0.6rem; font-size: 0.75rem; width: auto;">匯入成新 Session</button>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <button id="delete-session-btn" class="secondary" style="display: none; margin: 0; padding: 0.25rem 0.6rem; font-size: 0.75rem; width: auto; border-color: #7a2f2f; color: #ffb3b3;">刪除 Session</button>
+          <button id="archive-import-btn" class="secondary" style="display: none; margin: 0; padding: 0.25rem 0.6rem; font-size: 0.75rem; width: auto;">匯入成新 Session</button>
+        </div>
       </div>
     </div>
 
@@ -607,6 +610,7 @@ async function renderChatPartial() {
     const archiveToggleBtn = document.getElementById('archive-toggle-btn');
     const archiveSectionBody = document.getElementById('archive-section-body');
     const archiveImportBtn = document.getElementById('archive-import-btn');
+    const deleteSessionBtn = document.getElementById('delete-session-btn');
     const reconnectBtn = document.getElementById('ws-reconnect-btn');
     
     let ws = null;
@@ -692,11 +696,13 @@ async function renderChatPartial() {
         activeSessionTitle.textContent = '尚未選擇 Session';
         activeSessionMeta.textContent = '請先建立新 session，或還原既有 session。';
         threadInfo.textContent = '';
+        deleteSessionBtn.style.display = 'none';
         archiveImportBtn.style.display = activeArchive ? 'inline-block' : 'none';
         chatInput.disabled = true;
         sendBtn.disabled = true;
         return;
       }
+      deleteSessionBtn.style.display = 'inline-block';
       archiveImportBtn.style.display = 'none';
       activeSessionTitle.textContent = activeSession.title;
       activeSessionMeta.textContent = \`最後更新: \${formatTs(activeSession.updated_at)} | 訊息數: \${(activeSession.messages || []).length}\`;
@@ -792,6 +798,10 @@ async function renderChatPartial() {
       messages.forEach((message) => appendMessage(message.role, message.text));
     }
 
+    function renderNoSessionState() {
+      chatMessages.innerHTML = '<div id="chat-empty-state" style="text-align: center; color: #666; font-size: 0.9rem; margin-top: 2rem;"><p>Codex Chat 可直接與後端 app-server 溝通。</p><p>請先建立新 session，或還原既有 session。</p></div>';
+    }
+
     async function fetchJson(url, options) {
       const response = await fetch(url, options);
       const payload = await response.json().catch(() => ({}));
@@ -862,6 +872,25 @@ async function renderChatPartial() {
       });
       await refreshSessionList();
       await loadSession(payload.session.id);
+    }
+
+    async function deleteActiveSession() {
+      if (!activeSession) return;
+      const target = activeSession;
+      const confirmed = window.confirm('確定要刪除 session「' + target.title + '」嗎？此操作無法復原。');
+      if (!confirmed) return;
+
+      await fetchJson('${ADMIN_UI_PATH}/chat/sessions/' + encodeURIComponent(target.id), {
+        method: 'DELETE',
+      });
+
+      activeSession = null;
+      activeArchive = null;
+      currentThreadId = null;
+      pendingTurnText = null;
+      renderNoSessionState();
+      updateSessionHeader();
+      await refreshSessionList();
     }
 
     async function persistSession(extra = {}) {
@@ -1077,6 +1106,9 @@ async function renderChatPartial() {
     });
     archiveImportBtn.addEventListener('click', () => {
       importArchive().catch((err) => appendMessage('system', '匯入 archived session 失敗: ' + err.message));
+    });
+    deleteSessionBtn.addEventListener('click', () => {
+      deleteActiveSession().catch((err) => appendMessage('system', '刪除 session 失敗: ' + err.message));
     });
     archiveToggleBtn.addEventListener('click', () => {
       toggleSection(archiveToggleBtn, archiveSectionBody);

@@ -179,6 +179,17 @@ class CodexChatSessionStore {
     await this.runSql(sql);
     return this.getSession(sessionId);
   }
+
+  async deleteSession(sessionId) {
+    const existing = await this.getSession(sessionId);
+    if (!existing) return false;
+    const sql = [
+      'DELETE FROM codex_chat_sessions',
+      `WHERE id='${this.escape(sessionId)}';`,
+    ].join('\n');
+    await this.runSql(sql);
+    return true;
+  }
 }
 
 module.exports = {
