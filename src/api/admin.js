@@ -1047,8 +1047,8 @@ async function renderChatPartial() {
 
     function sendMessage() {
       const text = chatInput.value
-        .replace(/\r\n?/g, '\n')
-        .replace(/^\n+|\n+$/g, '');
+        .replace(/\\r\\n?/g, '\\n')
+        .replace(/^\\n+|\\n+$/g, '');
       if (!text || !activeSession || chatInput.disabled || !isInitialized) return;
       
       appendMessage('user', text);
