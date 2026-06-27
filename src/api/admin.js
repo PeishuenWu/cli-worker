@@ -493,11 +493,14 @@ async function renderChatPartial() {
   return `
 <div class="card-header">
   <h2>Codex Chat</h2>
-  <span class="muted">可建立新 session，或還原先前已記錄的 Codex Chat session</span>
+  <div style="display: flex; align-items: center; gap: 0.75rem;">
+    <span class="muted">可建立新 session，或還原先前已記錄的 Codex Chat session</span>
+    <button id="session-sidebar-toggle-btn" class="secondary" style="margin: 0; padding: 0.25rem 0.65rem; font-size: 0.75rem; width: auto;">隱藏管理</button>
+  </div>
 </div>
 
-<div style="display: grid; grid-template-columns: 300px 1fr; gap: 1rem; min-height: calc(100vh - 350px);">
-  <aside style="border: 1px solid #333; border-radius: 8px; background: #141414; overflow: hidden;">
+<div id="codex-chat-layout" class="chat-layout" style="display: grid; grid-template-columns: 300px 1fr; gap: 1rem; min-height: calc(100vh - 350px);">
+  <aside id="session-sidebar" style="border: 1px solid #333; border-radius: 8px; background: #141414; overflow: hidden;">
     <div style="padding: 1rem; border-bottom: 1px solid #333; display: flex; gap: 0.5rem; align-items: center;">
       <button id="new-session-btn" style="margin: 0; flex: 1;">建立新 Session</button>
       <span id="session-count" class="muted" style="font-size: 0.75rem;">載入中...</span>
@@ -569,6 +572,8 @@ async function renderChatPartial() {
   .archive-item.active { border-color: #20c997; background: rgba(32,201,151,0.12); }
   .session-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 0.25rem; }
   .session-preview { color: #888; font-size: 0.75rem; line-height: 1.4; }
+  .chat-layout.sidebar-hidden { grid-template-columns: 1fr !important; }
+  .chat-layout.sidebar-hidden #session-sidebar { display: none; }
   .sidebar-section-body.is-hidden { display: none; }
   .msg { max-width: 85%; padding: 0.75rem 1rem; border-radius: 12px; line-height: 1.5; position: relative; word-break: break-word; font-size: 14px; }
   .msg-user { align-self: flex-end; background: #007bff; color: white; border-bottom-right-radius: 2px; }
@@ -580,6 +585,9 @@ async function renderChatPartial() {
 
 <script>
   (function() {
+    const chatLayout = document.getElementById('codex-chat-layout');
+    const sessionSidebar = document.getElementById('session-sidebar');
+    const sessionSidebarToggleBtn = document.getElementById('session-sidebar-toggle-btn');
     const chatMessages = document.getElementById('chat-messages');
     const chatInput = document.getElementById('chat-input');
     const sendBtn = document.getElementById('chat-send-btn');
@@ -618,6 +626,7 @@ async function renderChatPartial() {
     let reconnectAttempts = 0;
     let manualClose = false;
     const MAX_RECONNECT_DELAY_MS = 10000;
+    const SIDEBAR_HIDDEN_STORAGE_KEY = 'codex-chat-sidebar-hidden';
     
     function appendMessage(role, text, isStreaming = false) {
       const emptyState = document.getElementById('chat-empty-state');
@@ -703,6 +712,19 @@ async function renderChatPartial() {
     function toggleSection(button, body) {
       body.classList.toggle('is-hidden');
       updateSectionToggle(button, body);
+    }
+
+    function setSidebarHidden(hidden) {
+      chatLayout.classList.toggle('sidebar-hidden', hidden);
+      sessionSidebar.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+      sessionSidebarToggleBtn.textContent = hidden ? '顯示管理' : '隱藏管理';
+      try {
+        window.localStorage.setItem(SIDEBAR_HIDDEN_STORAGE_KEY, hidden ? '1' : '0');
+      } catch (_err) {}
+    }
+
+    function toggleSidebar() {
+      setSidebarHidden(!chatLayout.classList.contains('sidebar-hidden'));
     }
 
     function renderSessionList() {
@@ -1041,6 +1063,7 @@ async function renderChatPartial() {
       }
     });
     
+    sessionSidebarToggleBtn.addEventListener('click', toggleSidebar);
     sendBtn.addEventListener('click', sendMessage);
     newSessionBtn.addEventListener('click', () => {
       createSession().catch((err) => appendMessage('system', '建立 session 失敗: ' + err.message));
@@ -1076,6 +1099,11 @@ async function renderChatPartial() {
       this.style.height = (this.scrollHeight) + 'px';
     });
 
+    try {
+      setSidebarHidden(window.localStorage.getItem(SIDEBAR_HIDDEN_STORAGE_KEY) === '1');
+    } catch (_err) {
+      setSidebarHidden(false);
+    }
     updateSectionToggle(sessionToggleBtn, sessionSectionBody);
     updateSectionToggle(archiveToggleBtn, archiveSectionBody);
     connect();
