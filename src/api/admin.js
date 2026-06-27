@@ -502,16 +502,29 @@ async function renderChatPartial() {
       <button id="new-session-btn" style="margin: 0; flex: 1;">建立新 Session</button>
       <span id="session-count" class="muted" style="font-size: 0.75rem;">載入中...</span>
     </div>
-    <div style="padding: 0.75rem 0.75rem 0.25rem; color: #aaa; font-size: 0.75rem;">目前 Session</div>
-    <div id="session-list" style="max-height: 240px; overflow-y: auto; padding: 0.5rem;"></div>
+    <div style="padding: 0.75rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <div style="color: #aaa; font-size: 0.75rem;">目前 Session</div>
+        <button id="session-toggle-btn" class="secondary" style="margin: 0; padding: 0.15rem 0.5rem; font-size: 0.7rem; width: auto;">展開</button>
+      </div>
+      <div id="session-section-body" class="sidebar-section-body is-hidden">
+        <input id="session-search-input" type="search" placeholder="搜尋 session..." style="margin: 0 0 0.5rem; background: #1f1f1f; border-color: #3a3a3a; color: #eee;">
+        <div id="session-list" style="max-height: 240px; overflow-y: auto; padding: 0.25rem 0;"></div>
+      </div>
+    </div>
     <div style="border-top: 1px solid #333; padding: 0.75rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-        <div style="color: #aaa; font-size: 0.75rem;">Archived Sessions</div>
-        <span id="archive-count" class="muted" style="font-size: 0.75rem;">0 筆</span>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <div style="color: #aaa; font-size: 0.75rem;">Archived Sessions</div>
+          <span id="archive-count" class="muted" style="font-size: 0.75rem;">0 筆</span>
+        </div>
+        <button id="archive-toggle-btn" class="secondary" style="margin: 0; padding: 0.15rem 0.5rem; font-size: 0.7rem; width: auto;">展開</button>
       </div>
-      <input id="archive-search-input" type="search" placeholder="搜尋 archived session..." style="margin: 0 0 0.5rem; background: #1f1f1f; border-color: #3a3a3a; color: #eee;">
+      <div id="archive-section-body" class="sidebar-section-body is-hidden">
+        <input id="archive-search-input" type="search" placeholder="搜尋 archived session..." style="margin: 0 0 0.5rem; background: #1f1f1f; border-color: #3a3a3a; color: #eee;">
+        <div id="archive-list" style="max-height: calc(100vh - 720px); min-height: 180px; overflow-y: auto; padding: 0 0.5rem 0.5rem;"></div>
+      </div>
     </div>
-    <div id="archive-list" style="max-height: calc(100vh - 720px); min-height: 180px; overflow-y: auto; padding: 0 0.5rem 0.5rem;"></div>
   </aside>
 
   <div id="chat-container" style="display: flex; flex-direction: column; height: calc(100vh - 350px); background: #111; border-radius: 8px; border: 1px solid #333; overflow: hidden;">
@@ -556,6 +569,7 @@ async function renderChatPartial() {
   .archive-item.active { border-color: #20c997; background: rgba(32,201,151,0.12); }
   .session-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 0.25rem; }
   .session-preview { color: #888; font-size: 0.75rem; line-height: 1.4; }
+  .sidebar-section-body.is-hidden { display: none; }
   .msg { max-width: 85%; padding: 0.75rem 1rem; border-radius: 12px; line-height: 1.5; position: relative; word-break: break-word; font-size: 14px; }
   .msg-user { align-self: flex-end; background: #007bff; color: white; border-bottom-right-radius: 2px; }
   .msg-assistant { align-self: flex-start; background: #333; color: #eee; border-bottom-left-radius: 2px; border: 1px solid #444; }
@@ -576,9 +590,14 @@ async function renderChatPartial() {
     const sessionList = document.getElementById('session-list');
     const sessionCount = document.getElementById('session-count');
     const newSessionBtn = document.getElementById('new-session-btn');
+    const sessionSearchInput = document.getElementById('session-search-input');
+    const sessionToggleBtn = document.getElementById('session-toggle-btn');
+    const sessionSectionBody = document.getElementById('session-section-body');
     const archiveList = document.getElementById('archive-list');
     const archiveCount = document.getElementById('archive-count');
     const archiveSearchInput = document.getElementById('archive-search-input');
+    const archiveToggleBtn = document.getElementById('archive-toggle-btn');
+    const archiveSectionBody = document.getElementById('archive-section-body');
     const archiveImportBtn = document.getElementById('archive-import-btn');
     const reconnectBtn = document.getElementById('ws-reconnect-btn');
     
@@ -591,6 +610,7 @@ async function renderChatPartial() {
     let activeSession = null;
     let sessions = [];
     let archives = [];
+    let sessionSearchTerm = '';
     let activeArchive = null;
     let isInitialized = false;
     let pendingTurnText = null;
@@ -676,9 +696,29 @@ async function renderChatPartial() {
       sendBtn.disabled = !isInitialized;
     }
 
+    function updateSectionToggle(button, body) {
+      button.textContent = body.classList.contains('is-hidden') ? '展開' : '隱藏';
+    }
+
+    function toggleSection(button, body) {
+      body.classList.toggle('is-hidden');
+      updateSectionToggle(button, body);
+    }
+
     function renderSessionList() {
+      const normalizedTerm = sessionSearchTerm.trim().toLowerCase();
+      const filteredSessions = normalizedTerm
+        ? sessions.filter((session) => {
+            const haystack = [
+              session.title || '',
+              session.last_message || '',
+              session.id || '',
+            ].join('\n').toLowerCase();
+            return haystack.includes(normalizedTerm);
+          })
+        : sessions;
       sessionCount.textContent = \`\${sessions.length} 筆\`;
-      sessionList.innerHTML = sessions.map((session) => {
+      sessionList.innerHTML = filteredSessions.map((session) => {
         const isActive = activeSession && activeSession.id === session.id;
         const preview = session.last_message || '尚無訊息';
         return \`
@@ -690,7 +730,7 @@ async function renderChatPartial() {
             </div>
           </div>
         \`;
-      }).join('');
+      }).join('') || '<div class="muted" style="padding: 0.75rem 0;">沒有符合的 session</div>';
 
       sessionList.querySelectorAll('[data-session-id]').forEach((el) => {
         el.addEventListener('click', () => {
@@ -1005,8 +1045,18 @@ async function renderChatPartial() {
     newSessionBtn.addEventListener('click', () => {
       createSession().catch((err) => appendMessage('system', '建立 session 失敗: ' + err.message));
     });
+    sessionToggleBtn.addEventListener('click', () => {
+      toggleSection(sessionToggleBtn, sessionSectionBody);
+    });
+    sessionSearchInput.addEventListener('input', () => {
+      sessionSearchTerm = sessionSearchInput.value;
+      renderSessionList();
+    });
     archiveImportBtn.addEventListener('click', () => {
       importArchive().catch((err) => appendMessage('system', '匯入 archived session 失敗: ' + err.message));
+    });
+    archiveToggleBtn.addEventListener('click', () => {
+      toggleSection(archiveToggleBtn, archiveSectionBody);
     });
     reconnectBtn.addEventListener('click', () => {
       clearReconnectTimer();
@@ -1026,6 +1076,8 @@ async function renderChatPartial() {
       this.style.height = (this.scrollHeight) + 'px';
     });
 
+    updateSectionToggle(sessionToggleBtn, sessionSectionBody);
+    updateSectionToggle(archiveToggleBtn, archiveSectionBody);
     connect();
     refreshSessionList().catch((err) => {
       appendMessage('system', '讀取 session 清單失敗: ' + err.message);
