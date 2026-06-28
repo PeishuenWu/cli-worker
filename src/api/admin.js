@@ -532,9 +532,22 @@ async function renderChatPartial() {
 
   <div id="chat-container" style="display: flex; flex-direction: column; height: calc(100vh - 350px); background: #111; border-radius: 8px; border: 1px solid #333; overflow: hidden;">
     <div style="padding: 0.75rem 1rem; border-bottom: 1px solid #333; background: #161616; display: flex; justify-content: space-between; gap: 1rem;">
-      <div>
+      <div style="flex: 1; min-width: 0;">
         <div id="active-session-title" style="font-weight: 600; color: #eee;">尚未選擇 Session</div>
         <div id="active-session-meta" class="muted" style="font-size: 0.75rem;">請先建立新 session，或還原既有 session。</div>
+        <div id="session-details-form" style="display: none; margin-top: 0.75rem; grid-template-columns: minmax(160px, 280px) minmax(220px, 1fr) auto; gap: 0.5rem; align-items: end;">
+          <label style="margin: 0;">
+            <span class="muted" style="font-size: 0.7rem;">標題</span>
+            <input id="session-title-input" type="text" maxlength="120" placeholder="Session 標題"
+              style="margin: 0; height: 34px; padding: 0.25rem 0.5rem; background: #202020; border-color: #3a3a3a; color: #eee; font-size: 0.85rem;">
+          </label>
+          <label style="margin: 0;">
+            <span class="muted" style="font-size: 0.7rem;">描述</span>
+            <input id="session-description-input" type="text" maxlength="1000" placeholder="描述這段對話的用途或重點"
+              style="margin: 0; height: 34px; padding: 0.25rem 0.5rem; background: #202020; border-color: #3a3a3a; color: #eee; font-size: 0.85rem;">
+          </label>
+          <button id="save-session-details-btn" class="secondary" style="margin: 0; padding: 0.25rem 0.65rem; height: 34px; font-size: 0.75rem; width: auto;">儲存資訊</button>
+        </div>
       </div>
       <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem;">
         <div id="thread-info" class="muted" style="font-size: 0.75rem; text-align: right;"></div>
@@ -575,6 +588,7 @@ async function renderChatPartial() {
   .archive-item.active { border-color: #20c997; background: rgba(32,201,151,0.12); }
   .session-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 0.25rem; }
   .session-preview { color: #888; font-size: 0.75rem; line-height: 1.4; }
+  .session-description { color: #aaa; font-size: 0.75rem; line-height: 1.4; margin-bottom: 0.25rem; }
   .chat-layout.sidebar-hidden { grid-template-columns: 1fr !important; }
   .chat-layout.sidebar-hidden #session-sidebar { display: none; }
   .sidebar-section-body.is-hidden { display: none; }
@@ -597,6 +611,10 @@ async function renderChatPartial() {
     const wsStatus = document.getElementById('ws-status');
     const activeSessionTitle = document.getElementById('active-session-title');
     const activeSessionMeta = document.getElementById('active-session-meta');
+    const sessionDetailsForm = document.getElementById('session-details-form');
+    const sessionTitleInput = document.getElementById('session-title-input');
+    const sessionDescriptionInput = document.getElementById('session-description-input');
+    const saveSessionDetailsBtn = document.getElementById('save-session-details-btn');
     const threadInfo = document.getElementById('thread-info');
     const sessionList = document.getElementById('session-list');
     const sessionCount = document.getElementById('session-count');
@@ -696,6 +714,9 @@ async function renderChatPartial() {
         activeSessionTitle.textContent = '尚未選擇 Session';
         activeSessionMeta.textContent = '請先建立新 session，或還原既有 session。';
         threadInfo.textContent = '';
+        sessionDetailsForm.style.display = 'none';
+        sessionTitleInput.value = '';
+        sessionDescriptionInput.value = '';
         deleteSessionBtn.style.display = 'none';
         archiveImportBtn.style.display = activeArchive ? 'inline-block' : 'none';
         chatInput.disabled = true;
@@ -705,7 +726,10 @@ async function renderChatPartial() {
       deleteSessionBtn.style.display = 'inline-block';
       archiveImportBtn.style.display = 'none';
       activeSessionTitle.textContent = activeSession.title;
-      activeSessionMeta.textContent = \`最後更新: \${formatTs(activeSession.updated_at)} | 訊息數: \${(activeSession.messages || []).length}\`;
+      activeSessionMeta.textContent = \`\${activeSession.description ? activeSession.description + ' | ' : ''}最後更新: \${formatTs(activeSession.updated_at)} | 訊息數: \${(activeSession.messages || []).length}\`;
+      sessionDetailsForm.style.display = 'grid';
+      sessionTitleInput.value = activeSession.title || '';
+      sessionDescriptionInput.value = activeSession.description || '';
       threadInfo.textContent = activeSession.thread_id ? \`thread: \${activeSession.thread_id}\` : 'thread: 尚未建立';
       chatInput.disabled = !isInitialized;
       sendBtn.disabled = !isInitialized;
@@ -739,6 +763,7 @@ async function renderChatPartial() {
         ? sessions.filter((session) => {
             const haystack = [
               session.title || '',
+              session.description || '',
               session.last_message || '',
               session.id || '',
             ].join('\\n').toLowerCase();
@@ -749,9 +774,11 @@ async function renderChatPartial() {
       sessionList.innerHTML = filteredSessions.map((session) => {
         const isActive = activeSession && activeSession.id === session.id;
         const preview = session.last_message || '尚無訊息';
+        const description = session.description || '';
         return \`
           <div class="session-item \${isActive ? 'active' : ''}" data-session-id="\${escapeHtml(session.id)}">
             <div class="session-title">\${escapeHtml(session.title)}</div>
+            \${description ? \`<div class="session-description">\${escapeHtml(description.slice(0, 100))}</div>\` : ''}
             <div class="session-preview">\${escapeHtml(preview.slice(0, 80))}</div>
             <div class="muted" style="font-size: 0.7rem; margin-top: 0.35rem;">
               \${escapeHtml(formatTs(session.updated_at))} | \${escapeHtml(String(session.message_count || 0))} 則
@@ -857,6 +884,9 @@ async function renderChatPartial() {
       renderMessages(activeArchive.messages || []);
       activeSessionTitle.textContent = \`Archived: \${activeArchive.title}\`;
       activeSessionMeta.textContent = \`\${activeArchive.relative_path} | 訊息數: \${(activeArchive.messages || []).length}\`;
+      sessionDetailsForm.style.display = 'none';
+      sessionTitleInput.value = '';
+      sessionDescriptionInput.value = '';
       threadInfo.textContent = \`source: \${activeArchive.originator || activeArchive.source || 'archive'}\`;
       archiveImportBtn.style.display = 'inline-block';
       chatInput.disabled = true;
@@ -903,6 +933,7 @@ async function renderChatPartial() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title,
+          description: activeSession.description || '',
           threadId: currentThreadId || '',
           messages: activeSession.messages || [],
           ...extra,
@@ -912,6 +943,13 @@ async function renderChatPartial() {
       currentThreadId = activeSession.thread_id || null;
       await refreshSessionList();
       updateSessionHeader();
+    }
+
+    async function saveSessionDetails() {
+      if (!activeSession) return;
+      const title = sessionTitleInput.value;
+      const description = sessionDescriptionInput.value;
+      await persistSession({ title, description });
     }
 
     function connect(options = {}) {
@@ -1096,6 +1134,9 @@ async function renderChatPartial() {
     
     sessionSidebarToggleBtn.addEventListener('click', toggleSidebar);
     sendBtn.addEventListener('click', sendMessage);
+    saveSessionDetailsBtn.addEventListener('click', () => {
+      saveSessionDetails().catch((err) => appendMessage('system', 'Session 資訊儲存失敗: ' + err.message));
+    });
     newSessionBtn.addEventListener('click', () => {
       createSession().catch((err) => appendMessage('system', '建立 session 失敗: ' + err.message));
     });

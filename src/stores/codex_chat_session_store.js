@@ -61,19 +61,36 @@ class CodexChatSessionStore {
       'CREATE TABLE IF NOT EXISTS codex_chat_sessions (',
       '  id TEXT PRIMARY KEY,',
       '  title TEXT NOT NULL,',
+      '  description TEXT NOT NULL DEFAULT \'\',',
       '  thread_id TEXT,',
       '  messages_json TEXT NOT NULL,',
       '  created_at TEXT NOT NULL,',
       '  updated_at TEXT NOT NULL',
       ');',
+      'ALTER TABLE codex_chat_sessions ADD COLUMN description TEXT NOT NULL DEFAULT \'\';',
       'CREATE INDEX IF NOT EXISTS idx_codex_chat_sessions_updated_at ON codex_chat_sessions(updated_at DESC);',
     ].join('\n');
-    await this.runSql(sql);
+    try {
+      await this.runSql(sql);
+    } catch (err) {
+      if (!String(err.message || '').includes('duplicate column name')) throw err;
+      await this.runSql([
+        'PRAGMA journal_mode=WAL;',
+        'CREATE INDEX IF NOT EXISTS idx_codex_chat_sessions_updated_at ON codex_chat_sessions(updated_at DESC);',
+      ].join('\n'));
+    }
   }
 
   normalizeTitle(title) {
     const text = String(title || '').replace(/\s+/g, ' ').trim();
     return text.slice(0, 120) || 'New Session';
+  }
+
+  normalizeDescription(description) {
+    return String(description || '')
+      .replace(/\r\n?/g, '\n')
+      .replace(/^\n+|\n+$/g, '')
+      .slice(0, 1000);
   }
 
   normalizeMessages(messages) {
@@ -101,6 +118,7 @@ class CodexChatSessionStore {
     return {
       id: row.id,
       title: row.title,
+      description: row.description || '',
       thread_id: row.thread_id || '',
       created_at: row.created_at,
       updated_at: row.updated_at,
@@ -112,7 +130,7 @@ class CodexChatSessionStore {
   async listSessions(limit = 100) {
     const safeLimit = Math.max(1, Math.min(Number(limit) || 100, 500));
     const sql = [
-      'SELECT id, title, thread_id, messages_json, created_at, updated_at',
+      'SELECT id, title, description, thread_id, messages_json, created_at, updated_at',
       'FROM codex_chat_sessions',
       'ORDER BY updated_at DESC',
       `LIMIT ${safeLimit};`,
@@ -124,7 +142,7 @@ class CodexChatSessionStore {
 
   async getSession(sessionId) {
     const sql = [
-      'SELECT id, title, thread_id, messages_json, created_at, updated_at',
+      'SELECT id, title, description, thread_id, messages_json, created_at, updated_at',
       'FROM codex_chat_sessions',
       `WHERE id='${this.escape(sessionId)}'`,
       'LIMIT 1;',
@@ -139,22 +157,24 @@ class CodexChatSessionStore {
     };
   }
 
-  async createSession(title = 'New Session') {
+  async createSession(title = 'New Session', description = '') {
     const sessionId = crypto.randomUUID();
     const now = nowIso();
     const normalizedTitle = this.normalizeTitle(title);
+    const normalizedDescription = this.normalizeDescription(description);
     const sql = [
-      'INSERT INTO codex_chat_sessions (id, title, thread_id, messages_json, created_at, updated_at)',
-      `VALUES ('${this.escape(sessionId)}', '${this.escape(normalizedTitle)}', '', '[]', '${now}', '${now}');`,
+      'INSERT INTO codex_chat_sessions (id, title, description, thread_id, messages_json, created_at, updated_at)',
+      `VALUES ('${this.escape(sessionId)}', '${this.escape(normalizedTitle)}', '${this.escape(normalizedDescription)}', '', '[]', '${now}', '${now}');`,
     ].join('\n');
     await this.runSql(sql);
     return this.getSession(sessionId);
   }
 
-  async createSessionWithMessages(title = 'Imported Session', messages = []) {
-    const session = await this.createSession(title);
+  async createSessionWithMessages(title = 'Imported Session', messages = [], description = '') {
+    const session = await this.createSession(title, description);
     return this.updateSession(session.id, {
       title,
+      description,
       messages,
       threadId: '',
     });
@@ -167,6 +187,9 @@ class CodexChatSessionStore {
     const title = Object.prototype.hasOwnProperty.call(updates, 'title')
       ? this.normalizeTitle(updates.title)
       : existing.title;
+    const description = Object.prototype.hasOwnProperty.call(updates, 'description')
+      ? this.normalizeDescription(updates.description)
+      : existing.description;
     const threadId = Object.prototype.hasOwnProperty.call(updates, 'threadId')
       ? String(updates.threadId || '').trim().slice(0, 255)
       : String(existing.thread_id || '');
@@ -177,6 +200,7 @@ class CodexChatSessionStore {
     const sql = [
       'UPDATE codex_chat_sessions',
       `SET title='${this.escape(title)}',`,
+      `    description='${this.escape(description)}',`,
       `    thread_id='${this.escape(threadId)}',`,
       `    messages_json='${this.escape(JSON.stringify(messages))}',`,
       `    updated_at='${updatedAt}'`,

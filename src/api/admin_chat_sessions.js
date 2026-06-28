@@ -44,7 +44,7 @@ async function handleAdminChatSessionApi(req, res, url, adminUiPath) {
   if (req.method === 'POST' && url.pathname === `${adminUiPath}/chat/sessions`) {
     const rawBody = await readBody(req);
     const body = rawBody ? JSON.parse(rawBody) : {};
-    const session = await codexChatSessionStore.createSession(body.title || 'New Session');
+    const session = await codexChatSessionStore.createSession(body.title || 'New Session', body.description || '');
     sendJson(res, 201, { session });
     return true;
   }
@@ -53,7 +53,11 @@ async function handleAdminChatSessionApi(req, res, url, adminUiPath) {
   if (req.method === 'POST' && archiveImportMatch) {
     const archiveId = decodeURIComponent(archiveImportMatch[1]);
     const archive = await getArchivedSession(archiveId);
-    const session = await codexChatSessionStore.createSessionWithMessages(archive.title, archive.messages);
+    const session = await codexChatSessionStore.createSessionWithMessages(
+      archive.title,
+      archive.messages,
+      archive.relative_path || archive.last_message || ''
+    );
     sendJson(res, 201, { session, archive });
     return true;
   }
@@ -83,11 +87,12 @@ async function handleAdminChatSessionApi(req, res, url, adminUiPath) {
   if (req.method === 'PATCH') {
     const rawBody = await readBody(req);
     const body = rawBody ? JSON.parse(rawBody) : {};
-    const session = await codexChatSessionStore.updateSession(sessionId, {
-      title: body.title,
-      threadId: body.threadId,
-      messages: body.messages,
-    });
+    const updates = {};
+    if (Object.prototype.hasOwnProperty.call(body, 'title')) updates.title = body.title;
+    if (Object.prototype.hasOwnProperty.call(body, 'description')) updates.description = body.description;
+    if (Object.prototype.hasOwnProperty.call(body, 'threadId')) updates.threadId = body.threadId;
+    if (Object.prototype.hasOwnProperty.call(body, 'messages')) updates.messages = body.messages;
+    const session = await codexChatSessionStore.updateSession(sessionId, updates);
     if (!session) {
       sendJson(res, 404, { error: 'session_not_found' });
       return true;
