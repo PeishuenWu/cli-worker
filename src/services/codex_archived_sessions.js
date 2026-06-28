@@ -16,6 +16,13 @@ function normalizeText(text, maxChars = 400) {
   return String(text || '').replace(/\s+/g, ' ').trim().slice(0, maxChars);
 }
 
+function preserveMessageText(text, maxChars = 8000) {
+  return String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/^\n+|\n+$/g, '')
+    .slice(0, maxChars);
+}
+
 function looksLikeInstructionPrompt(text) {
   const normalized = normalizeText(text, 300);
   if (!normalized) return false;
@@ -136,13 +143,13 @@ async function parseArchiveFile(filePath, rootDir = CODEX_ARCHIVED_SESSIONS_DIR)
     }
 
     if (parsed.type === 'event_msg' && parsed.payload?.type === 'user_message') {
-      const text = normalizeText(parsed.payload.message, 8000);
+      const text = preserveMessageText(parsed.payload.message, 8000);
       if (text) messages.push({ role: 'user', text });
       continue;
     }
 
     if (parsed.type === 'event_msg' && parsed.payload?.type === 'task_complete') {
-      const text = normalizeText(parsed.payload.last_agent_message, 8000);
+      const text = preserveMessageText(parsed.payload.last_agent_message, 8000);
       if (text) messages.push({ role: 'assistant', text });
       turnCount += 1;
     }

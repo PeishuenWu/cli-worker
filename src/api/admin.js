@@ -644,6 +644,7 @@ async function renderChatPartial() {
     let activeArchive = null;
     let isInitialized = false;
     let pendingTurnText = null;
+    let queuedTurnTexts = [];
     let awaitingAssistantResponse = false;
     let archiveSyncTimer = null;
     let reconnectTimer = null;
@@ -875,6 +876,7 @@ async function renderChatPartial() {
       activeArchive = null;
       currentThreadId = activeSession.thread_id || null;
       pendingTurnText = null;
+      queuedTurnTexts = [];
       renderMessages(activeSession.messages || []);
       updateSessionHeader();
       renderSessionList();
@@ -889,7 +891,8 @@ async function renderChatPartial() {
       activeSession = null;
       currentThreadId = null;
       pendingTurnText = null;
-      renderMessages(activeArchive.messages || []);
+      queuedTurnTexts = [];
+      renderMessages(normalizeArchiveMessagesForDisplay(activeArchive.messages || []));
       activeSessionTitle.textContent = \`Archived: \${activeArchive.title}\`;
       activeSessionMeta.textContent = \`\${activeArchive.relative_path} | 訊息數: \${(activeArchive.messages || []).length}\`;
       sessionDetailsForm.style.display = 'none';
@@ -926,6 +929,7 @@ async function renderChatPartial() {
       activeArchive = null;
       currentThreadId = null;
       pendingTurnText = null;
+      queuedTurnTexts = [];
       renderNoSessionState();
       updateSessionHeader();
       await refreshSessionList();
@@ -953,8 +957,12 @@ async function renderChatPartial() {
       updateSessionHeader();
     }
 
+    function normalizeMessageText(text) {
+      return String(text || '').replace(/\s+/g, ' ').trim();
+    }
+
     function sameMessage(message, other) {
-      return message && other && message.role === other.role && message.text === other.text;
+      return message && other && message.role === other.role && normalizeMessageText(message.text) === normalizeMessageText(other.text);
     }
 
     function mergeMessages(existingMessages, archiveMessages) {
@@ -981,7 +989,20 @@ async function renderChatPartial() {
         if (matches) return existing.concat(archived.slice(overlap));
       }
 
-      return existing.concat(archived);
+      const missingArchivedMessages = [];
+      let existingSearchIndex = 0;
+      archived.forEach((message) => {
+        const matchedIndex = existing.findIndex((existingMessage, index) => (
+          index >= existingSearchIndex && sameMessage(existingMessage, message)
+        ));
+        if (matchedIndex === -1) {
+          missingArchivedMessages.push(message);
+          return;
+        }
+        existingSearchIndex = matchedIndex + 1;
+      });
+
+      return existing.concat(missingArchivedMessages);
     }
 
     function buildThreadRestartText(text) {
@@ -994,6 +1015,14 @@ async function renderChatPartial() {
         return \`\${label}: \${message.text}\`;
       }).join('\\n\\n');
       return \`\${RESTART_CONTEXT_MARKER}，thread 已重建。請把這些內容視為上下文，不要逐字重述。\\n\\n\${formattedHistory}\${RESTART_CURRENT_MARKER}\${text}\`;
+    }
+
+    function hasThreadRestartContext() {
+      return Boolean(
+        activeSession
+        && Array.isArray(activeSession.messages)
+        && activeSession.messages.slice(0, -1).length
+      );
     }
 
     function normalizeArchiveMessagesForDisplay(messages) {
@@ -1115,11 +1144,72 @@ async function renderChatPartial() {
       return id;
     }
 
+    function setComposerEnabled(enabled) {
+      chatInput.disabled = !enabled;
+      sendBtn.disabled = !enabled;
+      if (enabled) chatInput.focus();
+    }
+
+    function startTurn(text, options = {}) {
+      try {
+        awaitingAssistantResponse = true;
+        sendRpc('turn/start', {
+          threadId: currentThreadId,
+          input: [{ type: 'text', text: options.withRestartContext ? buildThreadRestartText(text) : text }]
+        });
+        scheduleArchiveSync(10000);
+        return true;
+      } catch (err) {
+        pendingTurnText = text;
+        awaitingAssistantResponse = false;
+        appendMessage('system', '連線暫時不可用，訊息已保留，重連後會再送出。');
+        scheduleReconnect();
+        return false;
+      }
+    }
+
+    function recordUserMessage(text) {
+      appendMessage('user', text);
+      activeSession.messages = activeSession.messages || [];
+      activeSession.messages.push({ role: 'user', text });
+      persistSession().catch((err) => appendMessage('system', 'Session 儲存失敗: ' + err.message));
+    }
+
+    function startPendingOrQueuedTurn() {
+      if (!activeSession || !isInitialized || awaitingAssistantResponse) return;
+
+      if (pendingTurnText) {
+        if (!currentThreadId) {
+          try {
+            awaitingAssistantResponse = true;
+            sendRpc('thread/start', {});
+          } catch (err) {
+            awaitingAssistantResponse = false;
+            appendMessage('system', '目前無法建立 thread，將在重連後重試。');
+            scheduleReconnect();
+          }
+          return;
+        }
+
+        const text = pendingTurnText;
+        pendingTurnText = null;
+        startTurn(text);
+        return;
+      }
+
+      const nextText = queuedTurnTexts.shift();
+      if (nextText) {
+        recordUserMessage(nextText);
+        startTurn(nextText);
+      }
+    }
+
     function handleRpc(msg) {
       if (msg.id === initId && msg.result) {
         isInitialized = true;
         ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'initialized', params: {} }));
         updateSessionHeader();
+        startPendingOrQueuedTurn();
       } else if (msg.result && msg.result.thread) {
         currentThreadId = msg.result.thread.id;
         if (activeSession) {
@@ -1128,16 +1218,15 @@ async function renderChatPartial() {
         persistSession().catch((err) => appendMessage('system', 'Session 儲存失敗: ' + err.message));
         if (pendingTurnText && activeSession) {
           const text = pendingTurnText;
+          const isThreadRestart = hasThreadRestartContext();
           pendingTurnText = null;
-          sendRpc('turn/start', {
-            threadId: currentThreadId,
-            input: [{ type: 'text', text: buildThreadRestartText(text) }]
-          });
-          scheduleArchiveSync(10000);
+          if (isThreadRestart) {
+            appendMessage('system', \`已重建 thread: \${currentThreadId}。\`);
+          }
+          startTurn(text, { withRestartContext: isThreadRestart });
         }
       } else if (msg.method === 'item/started') {
         if (msg.params.item.type === 'agentMessage') {
-          awaitingAssistantResponse = false;
           currentMessageDiv = appendMessage('assistant', '', true);
           currentMessageText = '';
         }
@@ -1163,9 +1252,8 @@ async function renderChatPartial() {
       } else if (msg.method === 'turn/completed') {
         awaitingAssistantResponse = false;
         scheduleArchiveSync(250);
-        chatInput.disabled = false;
-        sendBtn.disabled = false;
-        chatInput.focus();
+        setComposerEnabled(true);
+        startPendingOrQueuedTurn();
       } else if (msg.method === 'thread/status/changed') {
         scheduleArchiveSync(800);
       } else if (msg.error) {
@@ -1177,8 +1265,7 @@ async function renderChatPartial() {
           activeSession.thread_id = '';
           persistSession().catch(() => {});
         }
-        chatInput.disabled = false;
-        sendBtn.disabled = false;
+        setComposerEnabled(true);
       }
     }
 
@@ -1187,44 +1274,25 @@ async function renderChatPartial() {
         .replace(/\\r\\n?/g, '\\n')
         .replace(/^\\n+|\\n+$/g, '');
       if (!text || !activeSession || chatInput.disabled || !isInitialized) return;
-      
-      appendMessage('user', text);
-      activeSession.messages = activeSession.messages || [];
-      activeSession.messages.push({ role: 'user', text });
-      awaitingAssistantResponse = true;
+
       chatInput.value = '';
       chatInput.style.height = 'auto';
-      chatInput.disabled = true;
-      sendBtn.disabled = true;
-      persistSession().catch((err) => appendMessage('system', 'Session 儲存失敗: ' + err.message));
 
-      const sendTurn = () => {
-        try {
-          sendRpc('turn/start', {
-            threadId: currentThreadId,
-            input: [{ type: 'text', text }]
-          });
-          scheduleArchiveSync(10000);
-        } catch (err) {
-          pendingTurnText = text;
-          appendMessage('system', '連線暫時不可用，訊息已保留，重連後會再送出。');
-          scheduleReconnect();
-        }
-      };
-
-      if (!currentThreadId) {
-        pendingTurnText = text;
-        try {
-          sendRpc('thread/start', {});
-        } catch (err) {
-          awaitingAssistantResponse = false;
-          appendMessage('system', '目前無法建立 thread，將在重連後重試。');
-          scheduleReconnect();
-        }
+      if (awaitingAssistantResponse || pendingTurnText) {
+        queuedTurnTexts.push(text);
+        appendMessage('system', \`訊息已排隊，目前等待 \${queuedTurnTexts.length} 則。\`);
         return;
       }
 
-      sendTurn();
+      recordUserMessage(text);
+
+      if (!currentThreadId) {
+        pendingTurnText = text;
+        startPendingOrQueuedTurn();
+        return;
+      }
+
+      startTurn(text);
     }
 
     chatInput.addEventListener('keydown', (e) => {
