@@ -651,6 +651,8 @@ async function renderChatPartial() {
     let manualClose = false;
     const MAX_RECONNECT_DELAY_MS = 10000;
     const SIDEBAR_HIDDEN_STORAGE_KEY = 'codex-chat-sidebar-hidden';
+    const RESTART_CONTEXT_MARKER = '以下是管理端 session 已保存的先前對話';
+    const RESTART_CURRENT_MARKER = '\\n\\n目前使用者訊息:\\n';
     
     function appendMessage(role, text, isStreaming = false) {
       const emptyState = document.getElementById('chat-empty-state');
@@ -951,11 +953,58 @@ async function renderChatPartial() {
       updateSessionHeader();
     }
 
-    function sameMessages(left, right) {
-      if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
-      return left.every((message, index) => {
-        const other = right[index] || {};
-        return message.role === other.role && message.text === other.text;
+    function sameMessage(message, other) {
+      return message && other && message.role === other.role && message.text === other.text;
+    }
+
+    function mergeMessages(existingMessages, archiveMessages) {
+      const existing = Array.isArray(existingMessages) ? existingMessages : [];
+      const archived = Array.isArray(archiveMessages) ? archiveMessages : [];
+      if (!existing.length) return archived;
+      if (!archived.length) return existing;
+
+      const isArchivedExtension = existing.every((message, index) => {
+        const other = archived[index] || {};
+        return sameMessage(message, other);
+      });
+      if (isArchivedExtension && archived.length >= existing.length) return archived;
+
+      const maxOverlap = Math.min(existing.length, archived.length);
+      for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+        let matches = true;
+        for (let index = 0; index < overlap; index += 1) {
+          if (!sameMessage(existing[existing.length - overlap + index], archived[index])) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches) return existing.concat(archived.slice(overlap));
+      }
+
+      return existing.concat(archived);
+    }
+
+    function buildThreadRestartText(text) {
+      const history = (activeSession && Array.isArray(activeSession.messages))
+        ? activeSession.messages.slice(0, -1)
+        : [];
+      if (!history.length) return text;
+      const formattedHistory = history.map((message) => {
+        const label = message.role === 'assistant' ? 'assistant' : (message.role === 'system' ? 'system' : 'user');
+        return \`\${label}: \${message.text}\`;
+      }).join('\\n\\n');
+      return \`\${RESTART_CONTEXT_MARKER}，thread 已重建。請把這些內容視為上下文，不要逐字重述。\\n\\n\${formattedHistory}\${RESTART_CURRENT_MARKER}\${text}\`;
+    }
+
+    function normalizeArchiveMessagesForDisplay(messages) {
+      return (Array.isArray(messages) ? messages : []).map((message) => {
+        if (message.role !== 'user' || !String(message.text || '').startsWith(RESTART_CONTEXT_MARKER)) return message;
+        const markerIndex = String(message.text).lastIndexOf(RESTART_CURRENT_MARKER);
+        if (markerIndex === -1) return message;
+        return {
+          ...message,
+          text: String(message.text).slice(markerIndex + RESTART_CURRENT_MARKER.length),
+        };
       });
     }
 
@@ -973,10 +1022,13 @@ async function renderChatPartial() {
     async function syncMessagesFromArchive() {
       if (!activeSession || !currentThreadId) return;
       const payload = await fetchJson(\`${ADMIN_UI_PATH}/chat/threads/\${encodeURIComponent(currentThreadId)}/archive\`);
-      const archiveMessages = (payload.archive && payload.archive.messages) || [];
-      if (!archiveMessages.length || sameMessages(activeSession.messages || [], archiveMessages)) return;
+      const archiveMessages = normalizeArchiveMessagesForDisplay((payload.archive && payload.archive.messages) || []);
+      if (!archiveMessages.length) return;
 
-      activeSession.messages = archiveMessages;
+      const mergedMessages = mergeMessages(activeSession.messages || [], archiveMessages);
+      if (mergedMessages.length === (activeSession.messages || []).length) return;
+
+      activeSession.messages = mergedMessages;
       renderMessages(activeSession.messages);
       await persistSession({ messages: activeSession.messages });
       awaitingAssistantResponse = false;
@@ -1079,7 +1131,7 @@ async function renderChatPartial() {
           pendingTurnText = null;
           sendRpc('turn/start', {
             threadId: currentThreadId,
-            input: [{ type: 'text', text }]
+            input: [{ type: 'text', text: buildThreadRestartText(text) }]
           });
           scheduleArchiveSync(10000);
         }
