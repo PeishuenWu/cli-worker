@@ -219,7 +219,11 @@ function startServer(handleChatRequest) {
         return;
       }
 
-      if (url.pathname.startsWith(`${ADMIN_UI_PATH}/chat/sessions`) || url.pathname.startsWith(`${ADMIN_UI_PATH}/chat/archives`)) {
+      if (
+        url.pathname.startsWith(`${ADMIN_UI_PATH}/chat/sessions`) ||
+        url.pathname.startsWith(`${ADMIN_UI_PATH}/chat/archives`) ||
+        url.pathname.startsWith(`${ADMIN_UI_PATH}/chat/threads`)
+      ) {
         const handled = await handleAdminChatSessionApi(req, res, url, ADMIN_UI_PATH);
         if (handled) return;
       }

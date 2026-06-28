@@ -644,6 +644,8 @@ async function renderChatPartial() {
     let activeArchive = null;
     let isInitialized = false;
     let pendingTurnText = null;
+    let awaitingAssistantResponse = false;
+    let archiveSyncTimer = null;
     let reconnectTimer = null;
     let reconnectAttempts = 0;
     let manualClose = false;
@@ -676,6 +678,10 @@ async function renderChatPartial() {
 
     function stopConnectionState() {
       clearReconnectTimer();
+      if (archiveSyncTimer) {
+        clearTimeout(archiveSyncTimer);
+        archiveSyncTimer = null;
+      }
     }
 
     function getReconnectDelay() {
@@ -945,6 +951,40 @@ async function renderChatPartial() {
       updateSessionHeader();
     }
 
+    function sameMessages(left, right) {
+      if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+      return left.every((message, index) => {
+        const other = right[index] || {};
+        return message.role === other.role && message.text === other.text;
+      });
+    }
+
+    function scheduleArchiveSync(delayMs = 1200) {
+      if (!activeSession || !currentThreadId) return;
+      if (archiveSyncTimer) clearTimeout(archiveSyncTimer);
+      archiveSyncTimer = setTimeout(() => {
+        archiveSyncTimer = null;
+        syncMessagesFromArchive().catch((err) => {
+          appendMessage('system', '同步 archived session 失敗: ' + err.message);
+        });
+      }, delayMs);
+    }
+
+    async function syncMessagesFromArchive() {
+      if (!activeSession || !currentThreadId) return;
+      const payload = await fetchJson(\`${ADMIN_UI_PATH}/chat/threads/\${encodeURIComponent(currentThreadId)}/archive\`);
+      const archiveMessages = (payload.archive && payload.archive.messages) || [];
+      if (!archiveMessages.length || sameMessages(activeSession.messages || [], archiveMessages)) return;
+
+      activeSession.messages = archiveMessages;
+      renderMessages(activeSession.messages);
+      await persistSession({ messages: activeSession.messages });
+      awaitingAssistantResponse = false;
+      chatInput.disabled = false;
+      sendBtn.disabled = false;
+      chatInput.focus();
+    }
+
     async function saveSessionDetails() {
       if (!activeSession) return;
       const title = sessionTitleInput.value;
@@ -1041,9 +1081,11 @@ async function renderChatPartial() {
             threadId: currentThreadId,
             input: [{ type: 'text', text }]
           });
+          scheduleArchiveSync(10000);
         }
       } else if (msg.method === 'item/started') {
         if (msg.params.item.type === 'agentMessage') {
+          awaitingAssistantResponse = false;
           currentMessageDiv = appendMessage('assistant', '', true);
           currentMessageText = '';
         }
@@ -1067,10 +1109,15 @@ async function renderChatPartial() {
           }
         }
       } else if (msg.method === 'turn/completed') {
+        awaitingAssistantResponse = false;
+        scheduleArchiveSync(250);
         chatInput.disabled = false;
         sendBtn.disabled = false;
         chatInput.focus();
+      } else if (msg.method === 'thread/status/changed') {
+        scheduleArchiveSync(800);
       } else if (msg.error) {
+        awaitingAssistantResponse = false;
         appendMessage('system', \`RPC Error: \${msg.error.message}\`);
         if (/thread/i.test(String(msg.error.message || '')) && activeSession && currentThreadId) {
           appendMessage('system', '既有 thread 無法還原，將在下次送出時建立新 thread。');
@@ -1092,6 +1139,7 @@ async function renderChatPartial() {
       appendMessage('user', text);
       activeSession.messages = activeSession.messages || [];
       activeSession.messages.push({ role: 'user', text });
+      awaitingAssistantResponse = true;
       chatInput.value = '';
       chatInput.style.height = 'auto';
       chatInput.disabled = true;
@@ -1104,6 +1152,7 @@ async function renderChatPartial() {
             threadId: currentThreadId,
             input: [{ type: 'text', text }]
           });
+          scheduleArchiveSync(10000);
         } catch (err) {
           pendingTurnText = text;
           appendMessage('system', '連線暫時不可用，訊息已保留，重連後會再送出。');
@@ -1116,6 +1165,7 @@ async function renderChatPartial() {
         try {
           sendRpc('thread/start', {});
         } catch (err) {
+          awaitingAssistantResponse = false;
           appendMessage('system', '目前無法建立 thread，將在重連後重試。');
           scheduleReconnect();
         }

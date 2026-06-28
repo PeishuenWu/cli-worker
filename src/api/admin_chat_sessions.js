@@ -1,7 +1,11 @@
 'use strict';
 
 const { codexChatSessionStore } = require('../stores');
-const { searchArchivedSessions, getArchivedSession } = require('../services/codex_archived_sessions');
+const {
+  searchArchivedSessions,
+  getArchivedSession,
+  getArchivedSessionByThreadId,
+} = require('../services/codex_archived_sessions');
 
 function sendJson(res, statusCode, payload) {
   const body = JSON.stringify(payload);
@@ -38,6 +42,18 @@ async function handleAdminChatSessionApi(req, res, url, adminUiPath) {
   if (req.method === 'GET' && url.pathname === `${adminUiPath}/chat/sessions`) {
     const sessions = await codexChatSessionStore.listSessions(100);
     sendJson(res, 200, { sessions });
+    return true;
+  }
+
+  const threadArchiveMatch = url.pathname.match(new RegExp(`^${adminUiPath}/chat/threads/([^/]+)/archive$`));
+  if (req.method === 'GET' && threadArchiveMatch) {
+    const threadId = decodeURIComponent(threadArchiveMatch[1]);
+    const archive = await getArchivedSessionByThreadId(threadId);
+    if (!archive) {
+      sendJson(res, 404, { error: 'archive_not_found' });
+      return true;
+    }
+    sendJson(res, 200, { archive });
     return true;
   }
 

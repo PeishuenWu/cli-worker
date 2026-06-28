@@ -238,7 +238,25 @@ async function getArchivedSession(archiveId) {
   return parseArchiveFile(filePath, rootDir);
 }
 
+async function getArchivedSessionByThreadId(threadId) {
+  const targetThreadId = String(threadId || '').trim();
+  if (!targetThreadId) return null;
+
+  const rootDir = getArchivedSessionsRoot();
+  const files = await listJsonlFiles(rootDir);
+  for (const filePath of files) {
+    try {
+      const summary = await parseArchiveFile(filePath, rootDir);
+      if (summary.session_id === targetThreadId) return summary;
+    } catch (_err) {
+      continue;
+    }
+  }
+  return null;
+}
+
 module.exports = {
   searchArchivedSessions,
   getArchivedSession,
+  getArchivedSessionByThreadId,
 };
